@@ -178,6 +178,21 @@ class ObstacleInfo:
         return (self.center_x - origin_x, self.center_y - origin_y)
 
 
+def _to_int(val: Any) -> int:
+    """Coerce a protobuf value to int, defaulting to 0."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _to_text(val: Any) -> str:
+    """Coerce a protobuf value to str, decoding UTF-8 bytes."""
+    if isinstance(val, bytes):
+        return val.decode("utf-8", errors="replace")
+    return str(val) if val else ""
+
+
 def _to_float32(val: Any) -> float | None:
     """Convert a protobuf value to float32.
 
@@ -511,6 +526,39 @@ class NarwalState:
     # Cleaning stats
     cleaning_area: int = 0  # cm²
     cleaning_time: int = 0  # seconds
+    # Live task progress (working_status field 1, float32 percent).
+    # Holds the last task's value while idle — gate on is_cleaning.
+    cleaning_progress_pct: float = 0.0
+    # Live cleaned area (working_status field 2, float32 m²).
+    cleaning_area_m2: float = 0.0
+
+    # Mop-drying timer (working_status fields 8/9, seconds). Both 0 when
+    # no drying cycle is running. Field mapping from the StratoGh0st99
+    # fork (live-confirmed on Flow 2); absent on idle Flow 1 broadcasts.
+    mop_drying_elapsed: int = 0
+    mop_drying_target: int = 0
+
+    # Station / consumables. base_status field 41 tracks dust-bag
+    # remaining capacity (100 = healthy/empty, drops as it fills).
+    # Live-confirmed on Flow 1 fw v01.01.10.32 (=100, app shows Healthy).
+    dust_bag_health: int = 0
+
+    # Mop humidity broadcast (base_status field 29, 1=dry 2=normal 3=wet).
+    # Present on Flow 2; NOT broadcast by Flow 1 fw v01.01.10.32 (stays 0).
+    mop_humidity_raw: int = 0
+
+    # Active fault. Two channels, either may carry the error:
+    #   base_status 48.1.*.2 = {1: severity, 2: code, 3: message}
+    #   base_status 1        = {1: code, 2: severity, 3: message}
+    # Both empty ({}) when no error — live-confirmed on Flow 1.
+    error_code: int = 0
+    error_severity: int = 0
+    error_message: str = ""
+
+    # Station activity flags from empty-marker sub-fields in 48.1.*:
+    #   .10 = dust-bag emptying, .15 = mop drying (Flow 2 observed).
+    station_dust_emptying: bool = False
+    station_mop_drying: bool = False
 
     # Map
     map_data: MapData | None = None
@@ -583,6 +631,8 @@ class NarwalState:
         """
         if self.working_status in (
             WorkingStatus.DOCKED, WorkingStatus.CHARGED, WorkingStatus.DOCKED_V2,
+            # Mop wash/dry always happens on the dock.
+            WorkingStatus.MOP_WASHING,
         ):
             return True
         if self.working_status in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT):
@@ -644,6 +694,21 @@ class NarwalState:
         if "15" in decoded:
             # Field 15 may be cumulative time; prefer field 3 for current session
             pass
+        # Field 1 = task progress percent, field 2 = cleaned area in m²
+        # (both float32; live-confirmed on Flow 1 fw v01.01.10.32 —
+        # ws.1=20.0 / ws.2=1.256 after a partial room clean).
+        progress = _to_float32(decoded.get("1"))
+        if progress is not None and 0 <= progress <= 200:
+            self.cleaning_progress_pct = progress
+        area = _to_float32(decoded.get("2"))
+        if area is not None and 0 <= area <= 10000:
+            self.cleaning_area_m2 = area
+        # Fields 8/9 = mop-drying elapsed/target seconds (0 when idle).
+        for attr, key in (("mop_drying_elapsed", "8"), ("mop_drying_target", "9")):
+            try:
+                setattr(self, attr, int(decoded.get(key, 0) or 0))
+            except (ValueError, TypeError):
+                setattr(self, attr, 0)
 
     def update_from_base_status(self, decoded: dict[str, Any]) -> None:
         """Update state from a decoded robot_base_status message.
@@ -753,6 +818,61 @@ class NarwalState:
                 self.session_id = str(raw)
                 if self.session_id.startswith("b'"):
                     self.session_id = self.session_id[2:-1]
+        # Field 29 = live mop humidity (Flow 2 only; absent on Flow 1)
+        if "29" in decoded:
+            try:
+                self.mop_humidity_raw = int(decoded["29"])
+            except (ValueError, TypeError):
+                self.mop_humidity_raw = 0
+        # Field 41 = dust-bag remaining capacity, 0-100
+        # (live-confirmed on Flow 1 fw v01.01.10.32: 100 = app "Healthy")
+        if "41" in decoded:
+            try:
+                self.dust_bag_health = int(decoded["41"])
+            except (ValueError, TypeError):
+                self.dust_bag_health = 0
+        self._parse_dock_activities(decoded)
+
+    def _parse_dock_activities(self, decoded: dict[str, Any]) -> None:
+        """Parse errors and station activity from base_status field 48.1.
+
+        48.1 is a single message during a normal clean but a repeated list
+        when dock activities overlap. Error channels (either may carry it):
+          48.1.*.2 = {1: severity, 2: code, 3: localized_message}
+          field 1  = {1: code, 2: severity, 3: formatted_message}
+        Both empty ({}) when no error. Station-activity empty-marker
+        sub-fields: .10 = dust emptying, .15 = mop drying.
+        Field mapping from the StratoGh0st99 fork (Flow 2 live captures);
+        error/empty structure confirmed on Flow 1 fw v01.01.10.32.
+        """
+        f48_1 = decoded.get("48", {}).get("1") if isinstance(decoded.get("48"), dict) else None
+        f48_entries: list[dict[str, Any]] = []
+        if isinstance(f48_1, list):
+            f48_entries = [e for e in f48_1 if isinstance(e, dict)]
+        elif isinstance(f48_1, dict):
+            f48_entries = [f48_1]
+
+        err = next(
+            (e["2"] for e in f48_entries if isinstance(e.get("2"), dict) and e["2"]),
+            None,
+        )
+        f1 = decoded.get("1")
+        if isinstance(err, dict) and err:
+            self.error_severity = _to_int(err.get("1", 0))
+            self.error_code = _to_int(err.get("2", 0))
+            self.error_message = _to_text(err.get("3", ""))
+        elif isinstance(f1, dict) and f1:
+            # Secondary channel — note the swapped fields: 1 is the code.
+            self.error_code = _to_int(f1.get("1", 0))
+            self.error_severity = _to_int(f1.get("2", 0))
+            self.error_message = _to_text(f1.get("3", ""))
+        else:
+            self.error_code = 0
+            self.error_severity = 0
+            self.error_message = ""
+
+        self.station_dust_emptying = any("10" in e for e in f48_entries)
+        self.station_mop_drying = any("15" in e for e in f48_entries)
 
     def update_battery_from_base_status(self, decoded: dict[str, Any]) -> None:
         """Update ONLY hardware-sampled fields from a base_status response.

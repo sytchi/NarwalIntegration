@@ -650,3 +650,93 @@ class TestRoomInfoModelOverrides:
         }
         map_data = MapData.from_response(decoded)
         assert map_data.rooms[0].display_name == "Primary Bedroom"
+
+
+class TestStationAndConsumables:
+    """Decoding of dock/consumable fields live-captured on Flow 1 fw v01.01.10.32."""
+
+    def test_dust_bag_health_from_field_41(self) -> None:
+        state = NarwalState()
+        state.update_from_base_status({"41": 100})
+        assert state.dust_bag_health == 100
+
+    def test_mop_humidity_from_field_29(self) -> None:
+        state = NarwalState()
+        state.update_from_base_status({"29": 1})
+        assert state.mop_humidity_raw == 1
+
+    def test_mop_humidity_absent_keeps_zero(self) -> None:
+        """Flow 1 omits field 29 in some frames — value must persist as-is."""
+        state = NarwalState()
+        state.update_from_base_status({"29": 2})
+        state.update_from_base_status({"41": 100})
+        assert state.mop_humidity_raw == 2
+
+    def test_no_error_when_channels_empty(self) -> None:
+        """Both error channels empty ({}) — live-captured idle frame."""
+        state = NarwalState()
+        state.update_from_base_status(
+            {"1": {}, "48": {"1": {"2": {}, "5": {"1": {"1": 1, "2": 2, "3": 1}}}}}
+        )
+        assert state.error_code == 0
+        assert state.error_message == ""
+
+    def test_error_from_48_1_2(self) -> None:
+        state = NarwalState()
+        state.update_from_base_status(
+            {"48": {"1": {"2": {"1": 2, "2": 1234, "3": b"stuck"}}}}
+        )
+        assert state.error_severity == 2
+        assert state.error_code == 1234
+        assert state.error_message == "stuck"
+
+    def test_error_from_field_1_secondary_channel(self) -> None:
+        """Field 1 uses swapped layout: 1=code, 2=severity."""
+        state = NarwalState()
+        state.update_from_base_status({"1": {"1": 4321, "2": 1, "3": "brush jam"}})
+        assert state.error_code == 4321
+        assert state.error_severity == 1
+        assert state.error_message == "brush jam"
+
+    def test_error_clears_when_gone(self) -> None:
+        state = NarwalState()
+        state.update_from_base_status({"1": {"1": 4321, "2": 1, "3": "x"}})
+        state.update_from_base_status({"1": {}})
+        assert state.error_code == 0
+        assert state.error_message == ""
+
+    def test_station_mop_drying_marker(self) -> None:
+        """48.1.15 empty marker = mop drying (live-captured during dry cycle)."""
+        state = NarwalState()
+        state.update_from_base_status({"48": {"1": {"15": {}, "2": {}}}})
+        assert state.station_mop_drying
+        assert not state.station_dust_emptying
+
+    def test_station_dust_emptying_marker_in_repeated_list(self) -> None:
+        state = NarwalState()
+        state.update_from_base_status({"48": {"1": [{"10": {}}, {"15": {}}]}})
+        assert state.station_dust_emptying
+        assert state.station_mop_drying
+
+    def test_mop_washing_status_counts_as_docked(self) -> None:
+        """working_status 3 = dock maintenance — robot is on the dock."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 3}})
+        assert state.working_status == WorkingStatus.MOP_WASHING
+        assert state.is_docked
+
+    def test_progress_and_area_float32(self) -> None:
+        """ws.1/ws.2 are float32 bit patterns (live: 20.0 % / 1.256 m²)."""
+        state = NarwalState()
+        ws1 = struct.unpack("<I", struct.pack("<f", 20.0))[0]
+        ws2 = struct.unpack("<I", struct.pack("<f", 1.256))[0]
+        state.update_from_working_status({"1": ws1, "2": ws2})
+        assert state.cleaning_progress_pct == 20.0
+        assert round(state.cleaning_area_m2, 3) == 1.256
+
+    def test_mop_drying_timer_fields(self) -> None:
+        """ws.8/ws.9 = drying elapsed/target seconds (live: 2262/18000)."""
+        state = NarwalState()
+        state.update_from_working_status({"8": 2262, "9": 18000})
+        assert state.mop_drying_elapsed == 2262
+        assert state.mop_drying_target == 18000

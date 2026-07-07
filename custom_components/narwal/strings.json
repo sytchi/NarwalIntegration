@@ -42,6 +42,24 @@
           "fully_charged": "Fully Charged",
           "not_charging": "Not Charging"
         }
+      },
+      "dust_bag_health": {
+        "name": "Dust bag health"
+      },
+      "cleaning_progress": {
+        "name": "Cleaning progress"
+      },
+      "station_activity": {
+        "name": "Station activity",
+        "state": {
+          "idle": "Idle",
+          "mop_drying": "Mop drying",
+          "dust_emptying": "Dust emptying",
+          "mop_washing": "Mop washing"
+        }
+      },
+      "error": {
+        "name": "Error"
       }
     },
     "binary_sensor": {
@@ -54,6 +72,30 @@
       },
       "charging": {
         "name": "Charging"
+      }
+    },
+    "button": {
+      "wash_mop": {
+        "name": "Wash mop"
+      },
+      "dry_mop": {
+        "name": "Dry mop"
+      },
+      "empty_dustbin": {
+        "name": "Empty dustbin"
+      },
+      "wake": {
+        "name": "Wake robot"
+      }
+    },
+    "select": {
+      "mop_humidity": {
+        "name": "Mop humidity",
+        "state": {
+          "dry": "Dry",
+          "normal": "Normal",
+          "wet": "Wet"
+        }
       }
     }
   }

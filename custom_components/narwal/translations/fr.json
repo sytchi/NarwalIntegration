@@ -41,6 +41,24 @@
           "fully_charged": "Chargé complètement",
           "not_charging": "Pas en charge"
         }
+      },
+      "dust_bag_health": {
+        "name": "Dust bag health"
+      },
+      "cleaning_progress": {
+        "name": "Cleaning progress"
+      },
+      "station_activity": {
+        "name": "Station activity",
+        "state": {
+          "idle": "Idle",
+          "mop_drying": "Mop drying",
+          "dust_emptying": "Dust emptying",
+          "mop_washing": "Mop washing"
+        }
+      },
+      "error": {
+        "name": "Error"
       }
     },
     "binary_sensor": {
@@ -49,6 +67,30 @@
         "state": {
           "on": "Stationné",
           "off": "Non stationné"
+        }
+      }
+    },
+    "button": {
+      "wash_mop": {
+        "name": "Laver la serpillière"
+      },
+      "dry_mop": {
+        "name": "Sécher la serpillière"
+      },
+      "empty_dustbin": {
+        "name": "Vider le bac"
+      },
+      "wake": {
+        "name": "Réveiller le robot"
+      }
+    },
+    "select": {
+      "mop_humidity": {
+        "name": "Humidité de la serpillière",
+        "state": {
+          "dry": "Sec",
+          "normal": "Normal",
+          "wet": "Humide"
         }
       }
     }

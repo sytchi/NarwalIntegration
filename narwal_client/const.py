@@ -168,6 +168,9 @@ class WorkingStatus(IntEnum):
     UNKNOWN = 0
     STANDBY = 1       # idle / transition state
     DOCKED_V2 = 2     # on dock (v01.07.23.00+ — replaces DOCKED=10/CHARGED=14 from older FW)
+    MOP_WASHING = 3   # dock maintenance (mop wash/dry cycle); observed on Flow 2
+                      # (StratoGh0st99 fork) and live on Flow 1 fw v01.01.10.32
+                      # while the station was drying the mop
     CLEANING = 4      # active cleaning (stays 4 even while returning to dock)
     CLEANING_ALT = 5  # cleaning — observed when robot was physically stuck; may indicate error/stuck state
     DOCKED = 10       # on dock (does NOT reliably indicate charging vs charged)
