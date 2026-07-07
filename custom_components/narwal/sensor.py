@@ -15,7 +15,7 @@ from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfArea, UnitOfTi
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .narwal_client import NarwalState
+from .narwal_client import NarwalState, WorkingStatus
 
 from . import NarwalConfigEntry
 from .coordinator import NarwalCoordinator
@@ -67,6 +67,46 @@ SENSOR_DESCRIPTIONS: tuple[NarwalSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda state: state.firmware_version or None,
     ),
+    NarwalSensorEntityDescription(
+        key="dust_bag_health",
+        translation_key="dust_bag_health",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:trash-can-outline",
+        # base_status field 41: 100 = healthy/empty bag, drops as it fills.
+        value_fn=lambda state: state.dust_bag_health
+        if state.dust_bag_health > 0
+        else None,
+    ),
+    NarwalSensorEntityDescription(
+        key="cleaning_progress",
+        translation_key="cleaning_progress",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:progress-check",
+        # working_status field 1 holds the last task's percent while
+        # idle — only report during an active clean.
+        value_fn=lambda state: round(state.cleaning_progress_pct, 1)
+        if state.is_cleaning
+        else None,
+    ),
+    NarwalSensorEntityDescription(
+        key="station_activity",
+        translation_key="station_activity",
+        device_class=SensorDeviceClass.ENUM,
+        options=["idle", "mop_washing", "mop_drying", "dust_emptying"],
+        icon="mdi:home-import-outline",
+        value_fn=lambda state: (
+            "dust_emptying"
+            if state.station_dust_emptying
+            else "mop_drying"
+            if state.station_mop_drying or state.mop_drying_target > 0
+            else "mop_washing"
+            if state.working_status == WorkingStatus.MOP_WASHING
+            else "idle"
+        ),
+    ),
 )
 
 
@@ -81,6 +121,7 @@ async def async_setup_entry(
         NarwalSensor(coordinator, description) for description in SENSOR_DESCRIPTIONS
     ]
     entities.append(NarwalChargingStateSensor(coordinator))
+    entities.append(NarwalErrorSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -107,6 +148,52 @@ class NarwalSensor(NarwalEntity, SensorEntity):
         if state is None:
             return None
         return self.entity_description.value_fn(state)
+
+
+class NarwalErrorSensor(NarwalEntity, SensorEntity):
+    """Active fault reported by the robot.
+
+    State is "no_error" or the numeric fault code; the localized message
+    and severity are exposed as attributes (the message arrives in the
+    firmware's locale, so the code is the stable key for automations).
+    """
+
+    _attr_translation_key = "error"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        """Initialize the error sensor."""
+        super().__init__(coordinator)
+        device_id = coordinator.config_entry.data["device_id"]
+        self._attr_unique_id = f"{device_id}_error"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current error code or no_error."""
+        state = self.coordinator.data
+        if state is None:
+            return None
+        if not state.error_code:
+            return "no_error"
+        return str(state.error_code)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int] | None:
+        """Return error details."""
+        state = self.coordinator.data
+        if state is None or not state.error_code:
+            return None
+        return {
+            "message": state.error_message,
+            "severity": state.error_severity,
+        }
+
+    @property
+    def icon(self) -> str:
+        """Return icon based on error state."""
+        if self.native_value in (None, "no_error"):
+            return "mdi:check-circle-outline"
+        return "mdi:alert-circle"
 
 
 class NarwalChargingStateSensor(NarwalEntity, SensorEntity):
