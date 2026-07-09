@@ -16,6 +16,7 @@ import tests.ha_stubs  # noqa: E402
 
 tests.ha_stubs.install()
 
+from narwal_client.const import CleanMode  # noqa: E402
 from narwal_client.models import MapData, NarwalState, RoomInfo  # noqa: E402
 from custom_components.narwal.vacuum import NarwalVacuum  # noqa: E402
 
@@ -165,20 +166,23 @@ class TestAsyncGetSegments:
 class TestAsyncCleanSegments:
     """Tests for async_clean_segments."""
 
-    async def test_converts_string_ids_and_calls_start_rooms(self) -> None:
-        """Converts string segment IDs to int and calls client.start_rooms."""
+    async def test_converts_string_ids_and_calls_start_clean_rooms(self) -> None:
+        """Converts string segment IDs to int and calls start_clean_rooms."""
         state = NarwalState()
         vac = _make_vacuum(state=state)
-        vac.coordinator.client.start_rooms = AsyncMock(
+        vac.coordinator.client.start_clean_rooms = AsyncMock(
             return_value=MagicMock(result_code=0, success=True)
         )
+        vac.coordinator.client.start_rooms = AsyncMock()
         # Mock wake so it's a no-op
         vac.coordinator.client.robot_awake = True
         vac.coordinator.client.wake = AsyncMock()
 
         await vac.async_clean_segments(["11", "9"])
 
-        vac.coordinator.client.start_rooms.assert_awaited_once_with([11, 9])
+        vac.coordinator.client.start_clean_rooms.assert_awaited_once_with(
+            [11, 9], clean_mode=CleanMode.SWEEP_MOP
+        )
 
 
 class TestCheckSegmentChanges:

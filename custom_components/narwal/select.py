@@ -7,10 +7,12 @@ import logging
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .narwal_client import MopHumidity
 
 from . import NarwalConfigEntry
+from .const import CLEAN_MODE_LIST
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 
@@ -40,7 +42,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up Narwal select entities."""
     coordinator = entry.runtime_data
-    async_add_entities([NarwalMopHumiditySelect(coordinator)])
+    async_add_entities(
+        [
+            NarwalMopHumiditySelect(coordinator),
+            NarwalCleanModeSelect(coordinator),
+        ]
+    )
 
 
 class NarwalMopHumiditySelect(NarwalEntity, SelectEntity):
@@ -85,4 +92,43 @@ class NarwalMopHumiditySelect(NarwalEntity, SelectEntity):
             "set_mop_humidity(%s) response code=%s", option, resp.result_code
         )
         self._last_set = option
+        self.async_write_ha_state()
+
+
+class NarwalCleanModeSelect(NarwalEntity, SelectEntity, RestoreEntity):
+    """Clean mode applied to the next clean.
+
+    Options: sweep (vacuum only), mop, sweep_mop (vacuum + mop at the
+    same time), sweep_then_mop (vacuum the whole area first, then mop).
+    The local protocol has no standalone set-mode command — the mode is
+    part of the clean/plan/start payload — so selecting an option only
+    stores it on the coordinator; the vacuum entity sends it with the
+    next start or room clean.
+    """
+
+    _attr_translation_key = "clean_mode"
+    _attr_options = CLEAN_MODE_LIST
+    _attr_icon = "mdi:broom"
+
+    def __init__(self, coordinator: NarwalCoordinator) -> None:
+        """Initialize the select entity."""
+        super().__init__(coordinator)
+        device_id = coordinator.config_entry.data["device_id"]
+        self._attr_unique_id = f"{device_id}_clean_mode"
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last selected mode across restarts."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in CLEAN_MODE_LIST:
+            self.coordinator.clean_mode = last.state
+
+    @property
+    def current_option(self) -> str:
+        """Return the currently selected clean mode."""
+        return self.coordinator.clean_mode
+
+    async def async_select_option(self, option: str) -> None:
+        """Store the selected clean mode for the next clean."""
+        self.coordinator.clean_mode = option
         self.async_write_ha_state()

@@ -1,0 +1,111 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Połącz z odkurzaczem Narwal",
+        "description": "Podaj adres IP robota Narwal i wybierz model.",
+        "data": {
+          "host": "Adres IP",
+          "port": "Port",
+          "model": "Model"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie można połączyć się z odkurzaczem. Sprawdź adres IP i upewnij się, że robot jest włączony.",
+      "unknown": "Wystąpił nieoczekiwany błąd."
+    },
+    "abort": {
+      "already_configured": "Ten odkurzacz jest już skonfigurowany."
+    }
+  },
+  "entity": {
+    "vacuum": {
+      "vacuum": {
+        "name": "Odkurzacz"
+      }
+    },
+    "sensor": {
+      "cleaning_area": {
+        "name": "Sprzątnięta powierzchnia"
+      },
+      "cleaning_time": {
+        "name": "Czas sprzątania"
+      },
+      "firmware_version": {
+        "name": "Wersja oprogramowania"
+      },
+      "charging_state": {
+        "name": "Ładowanie",
+        "state": {
+          "charging": "Ładowanie",
+          "fully_charged": "Naładowany",
+          "not_charging": "Nie ładuje"
+        }
+      },
+      "dust_bag_health": {
+        "name": "Worek na kurz"
+      },
+      "cleaning_progress": {
+        "name": "Postęp sprzątania"
+      },
+      "station_activity": {
+        "name": "Aktywność stacji",
+        "state": {
+          "idle": "Bezczynna",
+          "mop_washing": "Mycie mopa",
+          "mop_drying": "Suszenie mopa",
+          "dust_emptying": "Opróżnianie kurzu"
+        }
+      },
+      "error": {
+        "name": "Błąd"
+      }
+    },
+    "binary_sensor": {
+      "docked": {
+        "name": "W stacji",
+        "state": {
+          "on": "W stacji",
+          "off": "Poza stacją"
+        }
+      },
+      "charging": {
+        "name": "Ładowanie"
+      }
+    },
+    "select": {
+      "clean_mode": {
+        "name": "Tryb sprzątania",
+        "state": {
+          "sweep": "Odkurzanie",
+          "mop": "Mycie",
+          "sweep_mop": "Odkurzanie i mycie",
+          "sweep_then_mop": "Odkurzanie, potem mycie"
+        }
+      },
+      "mop_humidity": {
+        "name": "Wilgotność mopa",
+        "state": {
+          "dry": "Sucho",
+          "normal": "Normalnie",
+          "wet": "Mokro"
+        }
+      }
+    },
+    "button": {
+      "wash_mop": {
+        "name": "Umyj mopa"
+      },
+      "dry_mop": {
+        "name": "Wysusz mopa"
+      },
+      "empty_dustbin": {
+        "name": "Opróżnij kurz"
+      },
+      "wake": {
+        "name": "Obudź robota"
+      }
+    }
+  }
+}

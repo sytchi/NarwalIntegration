@@ -256,6 +256,7 @@ def _parse_obstacles(field32: dict) -> list[ObstacleInfo]:
 class MapData:
     """Map data from get_map response."""
 
+    map_id: int = 0  # active map id from get_map field 2.1 (for clean/start_clean)
     width: int = 0
     height: int = 0
     resolution: int = 0
@@ -358,7 +359,13 @@ class MapData:
         if isinstance(field32, dict):
             obstacles = _parse_obstacles(field32)
 
+        try:
+            map_id = int(payload.get("1", 0) or 0)
+        except (ValueError, TypeError):
+            map_id = 0
+
         return cls(
+            map_id=map_id,
             width=int(payload.get("4", 0)),
             height=int(payload.get("5", 0)),
             resolution=resolution,

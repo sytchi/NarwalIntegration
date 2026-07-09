@@ -96,6 +96,15 @@
           "normal": "Normal",
           "wet": "Wet"
         }
+      },
+      "clean_mode": {
+        "name": "Clean mode",
+        "state": {
+          "sweep": "Vacuum",
+          "mop": "Mop",
+          "sweep_mop": "Vacuum & mop",
+          "sweep_then_mop": "Vacuum then mop"
+        }
       }
     }
   }
