@@ -58,7 +58,7 @@ class TestBuildCleanPayloadV2:
 
         outer = decoded["1"]
         assert outer["1"] == 1
-        assert outer["5"] == 6  # observed task source marker
+        assert outer["5"] == 4  # taskType = WorkMode.VACUUM_AND_MOP (PR #49)
 
         entry = outer["2"]
         assert entry["1"]["2"] == 7, "Room ID lives at 1.2.1.2 in v2 schema"
@@ -80,7 +80,7 @@ class TestBuildCleanPayloadV2:
         assert [e["3"] for e in entries] == [1, 2, 3]
 
     def test_default_clean_params(self) -> None:
-        """Default suction=3 / mop=2 / passes=1 / cleanMode=3 — Flow 1 max."""
+        """Default mode=4 (sweep+mop) / fan=3 / strength=1 / 1 pass (PR #49)."""
         import blackboxprotobuf
 
         client = NarwalClient("127.0.0.1")
@@ -88,24 +88,27 @@ class TestBuildCleanPayloadV2:
         decoded, _ = blackboxprotobuf.decode_message(payload)
 
         params = decoded["1"]["2"]["2"]
-        assert params["1"] == 3, "suction default 3 (Flow 1 max)"
-        assert params["2"] == 3, "cleanMode default 3 (sweep+mop in v2)"
-        assert params["3"] == 1, "passes default 1"
-        assert params["7"] == 2, "mop_humidity default 2 (wet)"
+        assert params["1"] == 4, "mode default 4 (vacuum+mop, CleanParam tag 1)"
+        assert params["2"] == 3, "fan default 3 (STRONG)"
+        assert params["3"] == 1, "strength default 1 (normal)"
+        assert params["7"] == 1, "sweepMopSyncTime default 1 pass"
 
     def test_custom_params_propagate(self) -> None:
-        """Caller-provided params (suction=4 for Flow 2) reach the wire."""
+        """Caller-provided params (fan=4 for Flow 2) reach the wire."""
         import blackboxprotobuf
+
+        from narwal_client.const import CleanMode
 
         client = NarwalClient("127.0.0.1")
         payload = client._build_clean_payload_v2(
-            [1], suction=4, mop_humidity=1, passes=2, clean_mode=3
+            [1], clean_mode=CleanMode.MOP, fan=4, strength=2, passes=2
         )
         decoded, _ = blackboxprotobuf.decode_message(payload)
         params = decoded["1"]["2"]["2"]
-        assert params["1"] == 4
-        assert params["7"] == 1
+        assert params["1"] == 3, "mode 3 (mop-only in v2)"
+        assert params["2"] == 4
         assert params["3"] == 2
+        assert params["6"] == 2, "passes land in mopTime (tag 6) for mop mode"
 
     def test_v2_payload_differs_from_legacy_default(self) -> None:
         """v2 schema must not collide with the legacy hardcoded default."""

@@ -198,6 +198,44 @@ class MopHumidity(IntEnum):
     WET = 2
 
 
+class CleanMode(IntEnum):
+    """Clean mode selected in HA, applied to the next clean.
+
+    SWEEP / MOP / SWEEP_MOP (0/1/2) are the APK's MapCleanParamInfo.cleanMode
+    values (legacy schema). SWEEP_THEN_MOP (3) is our own value for the
+    sequential "vacuum the whole area first, then mop" mode; it has no legacy
+    equivalent and is only meaningful on the v2 schema (maps to v2 mode 5).
+    """
+
+    SWEEP = 0
+    MOP = 1
+    SWEEP_MOP = 2
+    SWEEP_THEN_MOP = 3
+
+
+# The v2 clean/plan/start schema (firmware v01.07.22+) carries the mode in
+# CleanParam tag 1 with the app proto's CleanMode enum: 2=vacuum, 3=mop,
+# 4=vacuum+mop (simultaneous), 5=vacuum-then-mop. Values live-validated on
+# a Flow 2 in upstream PR #49 (jgus), consistent with the issue #36 Deep
+# Clean capture ({1:4, 2:3(fan), 4:3(water), 7:2(passes)}).
+CLEAN_MODE_TO_V2: dict[int, int] = {
+    CleanMode.SWEEP: 2,
+    CleanMode.MOP: 3,
+    CleanMode.SWEEP_MOP: 4,
+    CleanMode.SWEEP_THEN_MOP: 5,
+}
+
+# CleanTask.taskType (outer field 1.5) uses the WorkMode enum: 1=VACUUM,
+# 2=MOP, 3=VACUUM_THEN_MOP, 4=VACUUM_AND_MOP (PR #49; 6 = app shortcut
+# observed in the #36 capture).
+CLEAN_MODE_TO_TASK_TYPE: dict[int, int] = {
+    CleanMode.SWEEP: 1,
+    CleanMode.MOP: 2,
+    CleanMode.SWEEP_MOP: 4,
+    CleanMode.SWEEP_THEN_MOP: 3,
+}
+
+
 # robot_base_status field numbers
 class BaseStatusField(IntEnum):
     """Field numbers in the robot_base_status protobuf message.

@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .narwal_client import NarwalClient, NarwalConnectionError, NarwalState
 from .narwal_client.const import WorkingStatus
 
-from .const import DOMAIN
+from .const import DEFAULT_CLEAN_MODE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +55,10 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
             topic_prefix=topic_prefix,
         )
         self._listen_task: asyncio.Task[None] | None = None
+        # Clean mode option key (see CLEAN_MODE_MAP) applied to the next
+        # start / room clean. Owned by the select entity; the protocol has
+        # no standalone set-mode command, so it's HA-side state only.
+        self.clean_mode: str = DEFAULT_CLEAN_MODE
         self._fast_poll_remaining = 0
         self._prev_working_status = WorkingStatus.UNKNOWN
         self._map_fetch_pending = False

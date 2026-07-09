@@ -2,7 +2,7 @@
 
 from homeassistant.const import Platform
 
-from .narwal_client import FanLevel
+from .narwal_client import CleanMode, FanLevel
 
 DOMAIN = "narwal"
 DEFAULT_PORT = 9002
@@ -41,3 +41,14 @@ FAN_SPEED_MAP: dict[str, FanLevel] = {
 }
 
 FAN_SPEED_LIST: list[str] = list(FAN_SPEED_MAP.keys())
+
+CLEAN_MODE_MAP: dict[str, CleanMode] = {
+    "sweep": CleanMode.SWEEP,
+    "mop": CleanMode.MOP,
+    "sweep_mop": CleanMode.SWEEP_MOP,
+    "sweep_then_mop": CleanMode.SWEEP_THEN_MOP,
+}
+
+CLEAN_MODE_LIST: list[str] = list(CLEAN_MODE_MAP.keys())
+
+DEFAULT_CLEAN_MODE = "sweep_mop"

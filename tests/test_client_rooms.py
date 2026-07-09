@@ -193,3 +193,154 @@ class TestStartRoomsV2First:
 
         mock_send.assert_awaited_once()
         assert result.result_code == CommandResult.CONFLICT
+
+
+class TestCleanMode:
+    """Tests for clean_mode threading through start / start_rooms payloads."""
+
+    def _connected_client(self) -> NarwalClient:
+        client = NarwalClient("127.0.0.1")
+        client._ws = AsyncMock()
+        client._connected = True
+        return client
+
+    def test_legacy_payload_encodes_clean_mode(self) -> None:
+        """Legacy per-room entries carry the requested cleanMode."""
+        import blackboxprotobuf
+
+        from narwal_client.const import CleanMode
+
+        client = NarwalClient("127.0.0.1")
+        payload = client._build_room_clean_payload([11], clean_mode=CleanMode.MOP)
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        assert decoded["1"]["2"]["2"] == 1, "cleanMode should be 1 (mop)"
+
+    def test_legacy_payload_defaults_to_sweep_mop(self) -> None:
+        """Default legacy payload keeps cleanMode=2 (sweep+mop)."""
+        import blackboxprotobuf
+
+        client = NarwalClient("127.0.0.1")
+        payload = client._build_room_clean_payload([11])
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        assert decoded["1"]["2"]["2"] == 2
+
+    async def test_v2_payload_maps_clean_mode(self) -> None:
+        """start_rooms maps CleanMode to the v2 CleanParam mode enum."""
+        import blackboxprotobuf
+
+        from narwal_client.const import CleanMode
+
+        client = self._connected_client()
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            await client.start_rooms([5], clean_mode=CleanMode.SWEEP)
+
+        payload = mock_send.await_args.kwargs.get("payload")
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        assert decoded["1"]["2"]["2"]["1"] == 2, "v2 mode (tag 1) should be 2 (sweep)"
+        assert decoded["1"]["5"] == 1, "taskType should be 1 (VACUUM)"
+
+    async def test_v2_payload_default_sweep_mop(self) -> None:
+        """start_rooms without clean_mode sends v2 cleanMode=3 (sweep+mop)."""
+        import blackboxprotobuf
+
+        client = self._connected_client()
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            await client.start_rooms([5])
+
+        payload = mock_send.await_args.kwargs.get("payload")
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        assert decoded["1"]["2"]["2"]["1"] == 4, "v2 mode default 4 (sweep+mop)"
+
+    async def test_start_sweep_mop_uses_default_payload(self) -> None:
+        """start(clean_mode=SWEEP_MOP) keeps the plain whole-house payload."""
+        from narwal_client.const import CleanMode
+
+        client = self._connected_client()
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            await client.start(clean_mode=CleanMode.SWEEP_MOP)
+
+        mock_send.assert_awaited_once()
+        assert (
+            mock_send.await_args.kwargs.get("payload")
+            == client._DEFAULT_CLEAN_PAYLOAD
+        )
+
+    async def test_start_other_mode_routes_through_rooms(self) -> None:
+        """start(clean_mode=MOP) becomes a room clean over all map rooms."""
+        from unittest.mock import MagicMock
+
+        from narwal_client.const import CleanMode
+
+        client = self._connected_client()
+        room = MagicMock()
+        room.room_id = 4
+        client.state.map_data = MagicMock(rooms=[room])
+
+        with patch.object(
+            client, "start_rooms", new_callable=AsyncMock
+        ) as mock_rooms:
+            mock_rooms.return_value = CommandResponse(
+                result_code=CommandResult.SUCCESS
+            )
+            await client.start(clean_mode=CleanMode.MOP)
+
+        mock_rooms.assert_awaited_once_with([4], clean_mode=CleanMode.MOP)
+
+    async def test_start_other_mode_without_map_raises(self) -> None:
+        """start(clean_mode=MOP) with no map rooms raises instead of
+        silently starting a sweep+mop clean."""
+        from narwal_client.client import NarwalCommandError
+        from narwal_client.const import CleanMode
+
+        client = self._connected_client()
+        client.state.map_data = None
+
+        with patch.object(client, "get_map", new_callable=AsyncMock):
+            with pytest.raises(NarwalCommandError):
+                await client.start(clean_mode=CleanMode.MOP)
+
+    def test_sweep_then_mop_maps_to_v2_mode_5_and_task_type_3(self) -> None:
+        """Sequential vacuum-then-mop maps to v2 CleanParam mode 5 / taskType 3."""
+        from narwal_client.const import (
+            CLEAN_MODE_TO_TASK_TYPE,
+            CLEAN_MODE_TO_V2,
+            CleanMode,
+        )
+
+        assert CLEAN_MODE_TO_V2[CleanMode.SWEEP_THEN_MOP] == 5
+        assert CLEAN_MODE_TO_TASK_TYPE[CleanMode.SWEEP_THEN_MOP] == 3
+
+    async def test_v2_payload_maps_sweep_then_mop(self) -> None:
+        """start_rooms(SWEEP_THEN_MOP) encodes v2 mode 5 and taskType 3."""
+        import blackboxprotobuf
+
+        from narwal_client.const import CleanMode
+
+        client = self._connected_client()
+        success = CommandResponse(result_code=CommandResult.SUCCESS)
+
+        with patch.object(
+            client, "send_command", new_callable=AsyncMock
+        ) as mock_send:
+            mock_send.return_value = success
+            await client.start_rooms([5], clean_mode=CleanMode.SWEEP_THEN_MOP)
+
+        payload = mock_send.await_args.kwargs.get("payload")
+        decoded, _ = blackboxprotobuf.decode_message(payload)
+        assert decoded["1"]["2"]["2"]["1"] == 5, "v2 mode (tag 1) should be 5"
+        assert decoded["1"]["5"] == 3, "taskType should be 3 (VACUUM_THEN_MOP)"

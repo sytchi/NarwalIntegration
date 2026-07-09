@@ -123,6 +123,22 @@ def install() -> None:
     ha_ep = _mod("homeassistant.helpers.entity_platform", ha_helpers)
     ha_ep.AddConfigEntryEntitiesCallback = MagicMock  # type: ignore[attr-defined]
 
+    ha_rs = _mod("homeassistant.helpers.restore_state", ha_helpers)
+
+    class _RestoreEntity:
+        """Stub for RestoreEntity mixin."""
+
+        def __init_subclass__(cls, **kw: object) -> None:
+            pass
+
+        async def async_added_to_hass(self) -> None:
+            pass
+
+        async def async_get_last_state(self) -> object | None:
+            return None
+
+    ha_rs.RestoreEntity = _RestoreEntity  # type: ignore[attr-defined]
+
     # homeassistant.components.*
     ha_comp = _mod("homeassistant.components", ha)
 
@@ -189,6 +205,19 @@ def install() -> None:
     ha_bs = _mod("homeassistant.components.binary_sensor", ha_comp)
     ha_bs.BinarySensorEntity = MagicMock  # type: ignore[attr-defined]
     ha_bs.BinarySensorDeviceClass = MagicMock  # type: ignore[attr-defined]
+
+    ha_select = _mod("homeassistant.components.select", ha_comp)
+
+    class _SelectEntity:
+        """Stub for SelectEntity base class."""
+
+        def __init_subclass__(cls, **kw: object) -> None:
+            pass
+
+        def async_write_ha_state(self) -> None:
+            pass
+
+    ha_select.SelectEntity = _SelectEntity  # type: ignore[attr-defined]
 
     ha_cam = _mod("homeassistant.components.camera", ha_comp)
 

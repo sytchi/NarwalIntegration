@@ -55,3 +55,6 @@ nul
 run_analysis*.py
 prompt.md
 .venv-test/
+
+# tools local config (contains your robot IP)
+tools/config.py

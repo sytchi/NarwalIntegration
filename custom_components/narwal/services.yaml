@@ -1,0 +1,67 @@
+clean_zone:
+  name: Clean zone
+  description: >-
+    Clean one or more rectangular zones drawn on the map. Coordinates are in
+    map-image pixels (from the xiaomi-vacuum-map-card [[selection]] with
+    identity calibration); they are converted to the robot's map coordinates
+    using the active map's origin. The robot must be docked.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    zone:
+      name: Zone(s)
+      description: >-
+        List of rectangles, each [x1, y1, x2, y2] in map-image pixels. This is
+        the xiaomi-vacuum-map-card [[selection]] value.
+      required: false
+      example: "[[26, 24, 76, 76]]"
+      selector: {object: {}}
+    x1:
+      name: X1
+      description: Single-rectangle first corner X (pixels). Use when 'zone' is omitted.
+      required: false
+      example: 26
+      selector: {number: {min: 0, max: 4000, mode: box}}
+    y1:
+      name: Y1
+      description: Single-rectangle first corner Y (pixels).
+      required: false
+      example: 24
+      selector: {number: {min: 0, max: 4000, mode: box}}
+    x2:
+      name: X2
+      description: Single-rectangle opposite corner X (pixels).
+      required: false
+      example: 76
+      selector: {number: {min: 0, max: 4000, mode: box}}
+    y2:
+      name: Y2
+      description: Single-rectangle opposite corner Y (pixels).
+      required: false
+      example: 76
+      selector: {number: {min: 0, max: 4000, mode: box}}
+    fan_speed:
+      name: Fan speed
+      description: Optional suction level.
+      required: false
+      example: normal
+      selector: {select: {options: [quiet, normal, strong, max]}}
+
+clean_rooms:
+  name: Clean rooms
+  description: >-
+    Clean specific rooms by segment id in the currently selected clean mode,
+    via clean/start_clean. The robot must be docked.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    rooms:
+      name: Room segment ids
+      description: List of room segment ids (from vacuum/get_segments).
+      required: true
+      example: "[6]"
+      selector: {object: {}}
