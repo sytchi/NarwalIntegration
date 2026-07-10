@@ -574,8 +574,9 @@ def render_overlay(
     robot_y: float | None = None,
     robot_heading: float | None = None,
     trail: list[tuple[float, float]] | None = None,
+    zones: list[tuple[int, int, int, int]] | None = None,
 ) -> bytes:
-    """Draw robot position and trail on a copy of the cached base map.
+    """Draw robot position, trail and target zones on a copy of the base map.
 
     Args:
         base_img: Cached PIL Image from render_base_map (not modified).
@@ -584,15 +585,35 @@ def render_overlay(
         robot_y: Robot Y in grid coordinates.
         robot_heading: Heading in degrees.
         trail: List of (grid_x, grid_y) positions to draw as cleaning path.
+        zones: Rectangles (x_min, y_min, x_max, y_max) in grid coords to
+            highlight as the area the robot will clean.
 
     Returns:
         PNG bytes of the composited image.
     """
-    from PIL import ImageDraw
+    from PIL import Image, ImageDraw
 
     img = base_img.copy()
     draw = ImageDraw.Draw(img)
     width = img.width
+
+    # Draw target zones (semi-transparent amber fill + solid outline) so the
+    # user sees on the map where the robot will clean.
+    if zones:
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        odraw = ImageDraw.Draw(overlay)
+        for x_min, y_min, x_max, y_max in zones:
+            px0, px1 = int(min(x_min, x_max)), int(max(x_min, x_max))
+            py0 = height - 1 - int(max(y_min, y_max))
+            py1 = height - 1 - int(min(y_min, y_max))
+            odraw.rectangle([px0, py0, px1, py1], fill=(255, 170, 40, 70))
+        img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+        draw = ImageDraw.Draw(img)
+        for x_min, y_min, x_max, y_max in zones:
+            px0, px1 = int(min(x_min, x_max)), int(max(x_min, x_max))
+            py0 = height - 1 - int(max(y_min, y_max))
+            py1 = height - 1 - int(min(y_min, y_max))
+            draw.rectangle([px0, py0, px1, py1], outline=(255, 150, 0), width=2)
 
     # Draw trail (blue path showing where robot has cleaned)
     if trail and len(trail) >= 2:

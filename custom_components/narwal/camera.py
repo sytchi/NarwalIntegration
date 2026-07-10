@@ -191,10 +191,14 @@ class NarwalMapCamera(NarwalEntity, Camera):
 
             static_ts = static_map.created_at or 0
             trail_len = len(self._trail)
+            # Include the target zones so setting/clearing one forces a re-render
+            # even when the robot is stationary on the dock.
+            zones_key = tuple(state.active_zones)
             if display:
-                new_key = (static_ts, display.robot_x, display.robot_y, display.robot_heading, trail_len)
+                new_key = (static_ts, display.robot_x, display.robot_y,
+                           display.robot_heading, trail_len, zones_key)
             else:
-                new_key = (static_ts,)
+                new_key = (static_ts, zones_key)
 
         now = time.monotonic()
         since_render = now - self._last_render_time if self._last_render_time else 999
@@ -327,6 +331,15 @@ class NarwalMapCamera(NarwalEntity, Camera):
                         _LOGGER.debug("POSITION DIAG failed", exc_info=True)
 
         trail = list(self._trail) if self._trail else None
+        # active_zones are in robot WORLD coords; the renderer draws in grid
+        # coords (like the robot/trail), so subtract the map origin here.
+        zones = None
+        if state.active_zones:
+            ox, oy = static_map.origin_x, static_map.origin_y
+            zones = [
+                (x1 - ox, y1 - oy, x2 - ox, y2 - oy)
+                for (x1, y1, x2, y2) in state.active_zones
+            ]
 
         try:
             png_bytes = await self.hass.async_add_executor_job(
@@ -337,6 +350,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 robot_y,
                 robot_heading,
                 trail,
+                zones,
             )
 
             if png_bytes:

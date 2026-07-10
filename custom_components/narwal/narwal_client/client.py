@@ -926,6 +926,7 @@ class NarwalClient:
                 any other mode is routed through start_rooms() with every
                 known room (requires the map to be loaded).
         """
+        self.state.active_zones = []  # whole-house clean clears any zone preview
         if clean_mode is not None and int(clean_mode) != int(CleanMode.SWEEP_MOP):
             return await self._start_all_rooms_with_mode(clean_mode)
         resp = await self.send_command(
@@ -1224,6 +1225,7 @@ class NarwalClient:
         if not room_ids:
             return await self.start(clean_mode=clean_mode)
 
+        self.state.active_zones = []  # room clean clears any zone preview
         mode = CleanMode.SWEEP_MOP if clean_mode is None else CleanMode(int(clean_mode))
         payload_v2 = self._build_clean_payload_v2(room_ids, clean_mode=mode)
         resp = await self.send_command(
@@ -1391,7 +1393,14 @@ class NarwalClient:
             zones, map_id, clean_mode=clean_mode, fan=fan, water=water,
             mop_strength=mop_strength, passes=passes,
         )
-        return await self._send_start_clean(payload)
+        resp = await self._send_start_clean(payload)
+        if resp.result_code == CommandResult.SUCCESS:
+            # Remember the zones so the camera can show where it will clean.
+            self.state.active_zones = [
+                (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+                for (x1, y1, x2, y2) in zones
+            ]
+        return resp
 
     async def _send_start_clean(self, payload: bytes) -> CommandResponse:
         """Send a clean/start_clean payload, retrying over dock settling.
@@ -1594,14 +1603,17 @@ class NarwalClient:
         Note: force_end is slow — robot physically stops before responding.
         Previous testing shows 10-15s response times from CLEANING state.
         """
+        self.state.active_zones = []
         return await self.send_command(TOPIC_CMD_FORCE_END, timeout=timeout)
 
     async def cancel(self) -> CommandResponse:
         """Cancel current task."""
+        self.state.active_zones = []
         return await self.send_command(TOPIC_CMD_CANCEL)
 
     async def return_to_base(self, timeout: float = COMMAND_RESPONSE_TIMEOUT) -> CommandResponse:
         """Return to charging dock."""
+        self.state.active_zones = []
         return await self.send_command(TOPIC_CMD_RECALL, timeout=timeout)
 
     async def set_fan_speed(self, level: FanLevel | int) -> CommandResponse:
