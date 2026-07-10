@@ -571,6 +571,11 @@ class NarwalState:
     map_data: MapData | None = None
     map_display_data: MapDisplayData | None = None
 
+    # Zones the robot was last told to clean (grid coords: x_min,y_min,x_max,y_max).
+    # Set by start_zone, cleared by any other clean/stop command, so the camera
+    # can show where the robot will clean. Not from the protocol.
+    active_zones: list[tuple[int, int, int, int]] = field(default_factory=list)
+
     # Vision obstacles (camera-detected transient objects during cleaning)
     # Download/upgrade status
     download_status: int = 0
