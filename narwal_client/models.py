@@ -640,12 +640,22 @@ class NarwalState:
         Dock fields are checked for STANDBY/UNKNOWN and any status where
         cleaning is not active, since the robot can report unmapped states
         (e.g. self-test) while physically docked.
+
+        Exception (fw v01.08.03+): the robot keeps working_status=DOCKED_V2
+        while driving a point-navi task off dock (field 3 = {1: 2, 4: 3},
+        live capture 2026-07-16). The dock indicator fields stay truthful,
+        so an explicit off-dock reading from BOTH of them (f11=1 AND f47=2 —
+        the undocked values in every FW generation seen so far) vetoes the
+        dock-ish working_status. Requiring both avoids flapping on a single
+        stale field.
         """
         if self.working_status in (
             WorkingStatus.DOCKED, WorkingStatus.CHARGED, WorkingStatus.DOCKED_V2,
             # Mop wash/dry always happens on the dock.
             WorkingStatus.MOP_WASHING,
         ):
+            if self.dock_field11 == 1 and self.dock_field47 == 2:
+                return False
             return True
         if self.working_status in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT):
             return False

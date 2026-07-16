@@ -158,8 +158,15 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         # display_map dropout recovery: if cleaning but no display_map for
         # 30s, re-send topic subscription. Only subscription — no wake burst
         # (wake bursts during cleaning cause pause bouncing).
+        # Point-navi tasks (fw v01.08.03+) keep working_status=DOCKED_V2
+        # while driving; is_docked=False there means the robot is active,
+        # so recovery must run for that shape too. Gating on the explicit
+        # off-dock veto keeps a sleeping robot (dock fields absent) exempt.
         is_cleaning = state.working_status in (
             WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
+        ) or (
+            state.working_status == WorkingStatus.DOCKED_V2
+            and not state.is_docked
         )
         if is_cleaning:
             display_age = self.client.last_display_map_age
