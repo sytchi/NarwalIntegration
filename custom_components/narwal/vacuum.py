@@ -88,6 +88,15 @@ async def async_setup_entry(
         },
         "async_clean_rooms",
     )
+    # Resume the current task unconditionally via task/resume. vacuum.start
+    # only resumes when the coordinator reports CLEANING+paused, but during
+    # real stuck events the broadcast state can lag behind (e.g. still
+    # "docked"), sending the play button down the new-clean path instead.
+    platform.async_register_entity_service(
+        "resume",
+        {},
+        "async_resume_task",
+    )
 
 
 class NarwalVacuum(NarwalEntity, StateVacuumEntity):
@@ -294,6 +303,24 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """Clean specific rooms (by segment id) in the selected mode."""
         await self._ensure_awake()
         await self._clean_rooms_with_mode([int(r) for r in rooms])
+
+    async def async_resume_task(self, **kwargs: Any) -> None:
+        """Resume the current task via task/resume regardless of state.
+
+        task/resume never starts a new task, so it is safe to send blind —
+        the robot simply rejects it when there is nothing to resume.
+        """
+        await self._ensure_awake()
+        resp = await self.coordinator.client.resume(timeout=self._ACTION_TIMEOUT)
+        _LOGGER.info(
+            "Resume response: code=%s, success=%s", resp.result_code, resp.success,
+        )
+        if not resp.success:
+            _LOGGER.warning(
+                "Resume command did not succeed (code=%s) — "
+                "the robot may have no paused task to resume",
+                resp.result_code,
+            )
 
     async def _clean_rooms_with_mode(self, room_ids: list[int]) -> None:
         """Send a room clean in the selected mode via clean/start_clean.
