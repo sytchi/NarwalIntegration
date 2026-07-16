@@ -42,6 +42,24 @@ def install() -> None:
     # homeassistant.const
     ha_const = _mod("homeassistant.const", ha)
     ha_const.Platform = MagicMock()  # type: ignore[attr-defined]
+    ha_const.PERCENTAGE = "%"  # type: ignore[attr-defined]
+
+    class _EntityCategory:
+        CONFIG = "config"
+        DIAGNOSTIC = "diagnostic"
+
+    ha_const.EntityCategory = _EntityCategory  # type: ignore[attr-defined]
+
+    class _UnitOfArea:
+        SQUARE_METERS = "m²"
+
+    ha_const.UnitOfArea = _UnitOfArea  # type: ignore[attr-defined]
+
+    class _UnitOfTime:
+        SECONDS = "s"
+        MINUTES = "min"
+
+    ha_const.UnitOfTime = _UnitOfTime  # type: ignore[attr-defined]
 
     # homeassistant.core
     ha_core = _mod("homeassistant.core", ha)
@@ -198,9 +216,32 @@ def install() -> None:
     ha_vac.VacuumEntityFeature = _VacuumEntityFeature  # type: ignore[attr-defined]
 
     ha_sensor = _mod("homeassistant.components.sensor", ha_comp)
-    ha_sensor.SensorEntity = MagicMock  # type: ignore[attr-defined]
-    ha_sensor.SensorDeviceClass = MagicMock  # type: ignore[attr-defined]
-    ha_sensor.SensorStateClass = MagicMock  # type: ignore[attr-defined]
+    class _SensorEntity:
+        """Stub for SensorEntity base class."""
+
+        def __init_subclass__(cls, **kw: object) -> None:
+            pass
+
+    ha_sensor.SensorEntity = _SensorEntity  # type: ignore[attr-defined]
+    ha_sensor.SensorDeviceClass = MagicMock()  # type: ignore[attr-defined]
+    ha_sensor.SensorStateClass = MagicMock()  # type: ignore[attr-defined]
+
+    import dataclasses as _dc
+
+    @_dc.dataclass(frozen=True, kw_only=True)
+    class _SensorEntityDescription:
+        """Stub mirroring the fields our sensor descriptions use."""
+
+        key: str
+        device_class: object = None
+        native_unit_of_measurement: object = None
+        state_class: object = None
+        entity_category: object = None
+        icon: object = None
+        translation_key: object = None
+        options: object = None
+
+    ha_sensor.SensorEntityDescription = _SensorEntityDescription  # type: ignore[attr-defined]
 
     ha_bs = _mod("homeassistant.components.binary_sensor", ha_comp)
     ha_bs.BinarySensorEntity = MagicMock  # type: ignore[attr-defined]

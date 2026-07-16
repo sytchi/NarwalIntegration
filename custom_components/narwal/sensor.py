@@ -18,6 +18,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .narwal_client import NarwalState, WorkingStatus
 
 from . import NarwalConfigEntry
+from .const import ERROR_CODE_SLUGS, ERROR_HELP_URL_TEMPLATE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 
@@ -153,9 +154,11 @@ class NarwalSensor(NarwalEntity, SensorEntity):
 class NarwalErrorSensor(NarwalEntity, SensorEntity):
     """Active fault reported by the robot.
 
-    State is "no_error" or the numeric fault code; the localized message
-    and severity are exposed as attributes (the message arrives in the
-    firmware's locale, so the code is the stable key for automations).
+    State is "no_error", a translation slug for known fault codes
+    (ERROR_CODE_SLUGS), or the numeric fault code for unknown ones.
+    The numeric code stays available as the "code" attribute (the
+    firmware's message arrives in its own locale, so the code is the
+    stable key for automations).
     """
 
     _attr_translation_key = "error"
@@ -169,13 +172,13 @@ class NarwalErrorSensor(NarwalEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """Return the current error code or no_error."""
+        """Return no_error, a known-fault slug, or the raw code."""
         state = self.coordinator.data
         if state is None:
             return None
         if not state.error_code:
             return "no_error"
-        return str(state.error_code)
+        return ERROR_CODE_SLUGS.get(state.error_code, str(state.error_code))
 
     @property
     def extra_state_attributes(self) -> dict[str, str | int] | None:
@@ -184,8 +187,13 @@ class NarwalErrorSensor(NarwalEntity, SensorEntity):
         if state is None or not state.error_code:
             return None
         return {
+            "code": state.error_code,
+            "code_hex": f"0x{state.error_code:08X}",
             "message": state.error_message,
             "severity": state.error_severity,
+            "help_url": ERROR_HELP_URL_TEMPLATE.format(
+                code=f"{state.error_code:08x}"
+            ),
         }
 
     @property
