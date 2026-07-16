@@ -135,6 +135,36 @@ class TestNarwalState:
         assert state.working_status == WorkingStatus.DOCKED_V2
         assert state.is_docked
 
+    def test_docked_v2_off_dock_point_navi(self) -> None:
+        """DOCKED_V2 with explicit off-dock fields is NOT docked.
+
+        Live capture 2026-07-16 (fw v01.08.03.07): during a point-navi
+        cleaning task the robot keeps field3={1: 2, 4: 3} while driving,
+        with dock fields 11=1 / 47=2 (the undocked values).
+        """
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2, "4": 3},
+            "11": 1, "47": 2,
+        })
+        assert state.working_status == WorkingStatus.DOCKED_V2
+        assert not state.is_docked
+
+    def test_docked_v2_single_off_dock_field_stays_docked(self) -> None:
+        """One stale off-dock field alone must not veto DOCKED_V2."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 2}, "11": 1, "47": 1})
+        assert state.is_docked
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 2}, "11": 3, "47": 2})
+        assert state.is_docked
+
+    def test_docked_v2_missing_dock_fields_stays_docked(self) -> None:
+        """DOCKED_V2 without dock fields (e.g. asleep) still reads docked."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 2, "4": 1}})
+        assert state.is_docked
+
     def test_new_fw_field3_unknown_subfields_logged(self) -> None:
         """New firmware sub-fields (4, 11) are parsed without error."""
         state = NarwalState()

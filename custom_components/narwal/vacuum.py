@@ -143,6 +143,11 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         if state.is_docked:
             return VacuumActivity.DOCKED
         activity = WORKING_STATUS_TO_ACTIVITY.get(state.working_status)
+        # A dock-ish working_status that is_docked vetoed via the dock
+        # indicator fields (fw v01.08.03+ point-navi keeps DOCKED_V2 while
+        # driving) means the robot is active off dock — not on the dock.
+        if activity == VacuumActivity.DOCKED:
+            return VacuumActivity.CLEANING
         if activity is not None:
             return activity
         # Unknown working_status value — infer from dock signals so we
