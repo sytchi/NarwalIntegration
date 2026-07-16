@@ -65,3 +65,16 @@ clean_rooms:
       required: true
       example: "[6]"
       selector: {object: {}}
+
+resume:
+  name: Resume
+  description: >-
+    Resume the current task via task/resume, regardless of the reported
+    vacuum state. Use to un-stick a robot paused by a false "robot lifted"
+    error (e.g. on a doormat) even when the entity state lags behind.
+    Safe to call anytime — the robot rejects it when there is nothing
+    to resume.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
