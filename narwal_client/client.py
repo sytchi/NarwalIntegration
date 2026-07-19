@@ -1490,6 +1490,7 @@ class NarwalClient:
         Requires the robot docked. Returns the robot's response so callers
         can fall back to the legacy start() path on NOT_APPLICABLE.
         """
+        self.state.active_zones = []  # whole-house clean clears any zone preview
         map_data = self.state.map_data
         if not map_data or not map_data.map_id:
             map_data = await self.get_map()
@@ -1572,6 +1573,7 @@ class NarwalClient:
         if not room_ids:
             return CommandResponse(result_code=CommandResult.NOT_APPLICABLE)
 
+        self.state.active_zones = []  # room clean clears any zone preview
         map_data = self.state.map_data
         if not map_data or not map_data.map_id:
             map_data = await self.get_map()

@@ -60,6 +60,27 @@ def test_stop_clears_zones() -> None:
     assert c.state.active_zones == []
 
 
+def test_start_clean_whole_clears_zones() -> None:
+    # Whole-house clean is the primary path on fw v01.07+ and must drop the
+    # stale zone preview, otherwise the amber overlay from a previous zone
+    # clean persists on the camera map (regression: task 18043f5).
+    c = _client()
+    c.state.active_zones = [(0, 0, 10, 10)]
+    with patch.object(c, "send_command", new_callable=AsyncMock) as send:
+        send.return_value = CommandResponse(result_code=CommandResult.SUCCESS)
+        _run(c.start_clean_whole())
+    assert c.state.active_zones == []
+
+
+def test_start_clean_rooms_clears_zones() -> None:
+    c = _client()
+    c.state.active_zones = [(0, 0, 10, 10)]
+    with patch.object(c, "send_command", new_callable=AsyncMock) as send:
+        send.return_value = CommandResponse(result_code=CommandResult.SUCCESS)
+        _run(c.start_clean_rooms([1]))
+    assert c.state.active_zones == []
+
+
 def test_render_overlay_with_zone_returns_png() -> None:
     from PIL import Image
     from narwal_client.map_renderer import render_overlay
