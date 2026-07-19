@@ -126,13 +126,14 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         state = self.coordinator.data
         if state is None:
             return VacuumActivity.IDLE
-        is_cleaning_state = state.working_status in (
-            WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
-        )
-        # is_paused (field 3.2) stays stale after docking — only trust
-        # during cleaning states. Paused takes priority over returning
-        # since the robot physically stops when paused mid-return.
-        if state.is_paused and is_cleaning_state:
+        # is_paused (field 3.2) stays stale after docking — only trust it
+        # while a clean is actually running. is_cleaning_session covers both
+        # the legacy CLEANING(4) shape and the fw v01.08.03+ point-navi shape
+        # (working_status stays DOCKED_V2 off dock), so a robot paused on the
+        # new firmware is reported as PAUSED instead of falling through to
+        # CLEANING. Paused takes priority over returning since the robot
+        # physically stops when paused mid-return.
+        if state.is_paused and state.is_cleaning_session:
             return VacuumActivity.PAUSED
         # Check returning before cleaning — robot keeps working_status=CLEANING
         # while navigating back to dock (field 3.7=1 indicates returning)
@@ -196,11 +197,11 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """Start or resume cleaning."""
         await self._ensure_awake()
         state = self.coordinator.data
-        # is_paused stays stale after docking — only trust it during cleaning
-        is_cleaning = state and state.working_status in (
-            WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT,
-        )
-        if is_cleaning and state.is_paused:
+        # If a clean is paused, the play button must resume it, not start a
+        # fresh whole-house clean. is_cleaning_session recognizes a paused task
+        # on both firmware shapes (CLEANING(4) and fw v01.08.03+ DOCKED_V2 off
+        # dock); is_paused alone stays stale after docking, so gate on both.
+        if state and state.is_cleaning_session and state.is_paused:
             await self.coordinator.client.resume(timeout=self._ACTION_TIMEOUT)
             return
 
