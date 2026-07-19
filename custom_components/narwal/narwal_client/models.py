@@ -626,6 +626,26 @@ class NarwalState:
         )
 
     @property
+    def is_cleaning_session(self) -> bool:
+        """True when the robot is in an active cleaning task off the dock.
+
+        Covers both firmware shapes for "a clean is running":
+          - older FW: working_status = CLEANING(4) / CLEANING_ALT(5)
+          - fw v01.08.03+: working_status stays DOCKED_V2(2) during point-navi
+            tasks, and is_docked is False (dock fields 11=1 / 47=2 say off-dock).
+
+        Unlike is_cleaning, this stays True while the task is paused (field 3.2)
+        or returning (field 3.7), so those overlays are only honored mid-task
+        and never trusted stale on the dock. Live-captured 2026-07-19: a robot
+        paused mid-clean reports DOCKED_V2 + field3={1:2, 2:1}, f11=1, f47=2.
+        """
+        if self.working_status in (WorkingStatus.CLEANING, WorkingStatus.CLEANING_ALT):
+            return True
+        return (
+            self.working_status == WorkingStatus.DOCKED_V2 and not self.is_docked
+        )
+
+    @property
     def is_docked(self) -> bool:
         """True when on dock: DOCKED(10), CHARGED(14), DOCKED_V2(2), or dock field signals.
 

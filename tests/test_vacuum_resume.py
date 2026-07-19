@@ -94,3 +94,48 @@ class TestAsyncResumeTask:
         )
         await vac.async_resume_task()
         vac.coordinator.client.resume.assert_awaited_once()
+
+
+class TestAsyncStartResume:
+    """The play button (async_start) must resume a paused task, not restart.
+
+    On fw v01.08.03+ a paused clean reports working_status=DOCKED_V2(2), not
+    CLEANING(4). The resume gate must recognize that shape, otherwise the play
+    button sends start_clean_whole (a fresh whole-house clean) over a paused
+    task.
+    """
+
+    def _vac_with_start_mocks(self, state: NarwalState) -> NarwalVacuum:
+        vac = _make_vacuum(state=state)
+        vac.coordinator.client.start_clean_whole = AsyncMock(
+            return_value=MagicMock(result_code=0, success=True)
+        )
+        vac.coordinator.client.start = AsyncMock(
+            return_value=MagicMock(result_code=0, success=True)
+        )
+        vac.coordinator.clean_mode = "sweep_mop"
+        return vac
+
+    async def test_start_resumes_paused_docked_v2_off_dock(self) -> None:
+        """Paused DOCKED_V2 off dock → play button resumes, no new clean."""
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2, "2": 1},
+            "11": 1, "47": 2,
+        })
+        vac = self._vac_with_start_mocks(state)
+        await vac.async_start()
+        vac.coordinator.client.resume.assert_awaited_once()
+        vac.coordinator.client.start_clean_whole.assert_not_awaited()
+
+    async def test_start_starts_new_clean_when_not_paused(self) -> None:
+        """Cleaning (not paused) → play button starts a clean, not resume."""
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2},
+            "11": 1, "47": 2,
+        })
+        vac = self._vac_with_start_mocks(state)
+        await vac.async_start()
+        vac.coordinator.client.resume.assert_not_awaited()
+        vac.coordinator.client.start_clean_whole.assert_awaited_once()

@@ -770,3 +770,22 @@ class TestStationAndConsumables:
         state.update_from_working_status({"8": 2262, "9": 18000})
         assert state.mop_drying_elapsed == 2262
         assert state.mop_drying_target == 18000
+
+    def test_cleaning_session_docked_v2_off_dock(self) -> None:
+        """DOCKED_V2 off dock (fw v01.08.03+ point-navi) is a cleaning session."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 2}, "11": 1, "47": 2})
+        assert state.is_cleaning_session is True
+
+    def test_cleaning_session_legacy_cleaning(self) -> None:
+        """Legacy CLEANING(4) is a cleaning session."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 4}})
+        assert state.is_cleaning_session is True
+
+    def test_cleaning_session_false_on_dock(self) -> None:
+        """DOCKED_V2 on dock is NOT a cleaning session (paused overlay ignored)."""
+        state = NarwalState()
+        state.update_from_base_status({"3": {"1": 2, "2": 1}, "11": 3, "47": 1})
+        assert state.is_docked is True
+        assert state.is_cleaning_session is False

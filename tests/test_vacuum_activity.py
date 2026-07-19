@@ -63,3 +63,60 @@ class TestActivityDockedV2OffDock:
         state.update_from_base_status({"3": {"1": 2}})
         vac = _make_vacuum(state)
         assert vac.activity == VacuumActivity.DOCKED
+
+
+class TestActivityPaused:
+    """Pause detection across firmware shapes.
+
+    Live capture (2026-07-19, fw v01.08.03.07): a robot paused mid-clean
+    reports working_status=DOCKED_V2(2) with field3={1:2, 2:1} and off-dock
+    dock fields (11=1 / 47=2). The pause overlay (field 3.2) must be honored
+    even though working_status is not CLEANING(4).
+    """
+
+    def test_paused_off_dock_docked_v2_reports_paused(self) -> None:
+        """DOCKED_V2 off dock + pause overlay → PAUSED (fw v01.08.03+ shape)."""
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2, "2": 1},
+            "11": 1, "47": 2,
+        })
+        assert state.is_paused is True
+        vac = _make_vacuum(state)
+        assert vac.activity == VacuumActivity.PAUSED
+
+    def test_paused_legacy_cleaning_reports_paused(self) -> None:
+        """CLEANING(4) + pause overlay → PAUSED (legacy firmware shape)."""
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 4, "2": 1},
+            "11": 1, "47": 2,
+        })
+        vac = _make_vacuum(state)
+        assert vac.activity == VacuumActivity.PAUSED
+
+    def test_stale_paused_on_dock_reports_docked(self) -> None:
+        """A stale pause overlay while docked must NOT report PAUSED.
+
+        DOCKED_V2 with on-dock dock fields (11=3 / 47=1) is not a cleaning
+        session, so is_paused is ignored and the robot reads as DOCKED.
+        """
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2, "2": 1},
+            "11": 3, "47": 1,
+        })
+        assert state.is_paused is True
+        vac = _make_vacuum(state)
+        assert vac.activity == VacuumActivity.DOCKED
+
+    def test_not_paused_off_dock_still_cleaning(self) -> None:
+        """DOCKED_V2 off dock without pause overlay stays CLEANING."""
+        state = NarwalState()
+        state.update_from_base_status({
+            "3": {"1": 2},
+            "11": 1, "47": 2,
+        })
+        assert state.is_paused is False
+        vac = _make_vacuum(state)
+        assert vac.activity == VacuumActivity.CLEANING
