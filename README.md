@@ -69,9 +69,9 @@ Models marked **Not compatible** use a different protocol or are cloud-only. Thi
 <p align="center">
   <img src="docs/images/map-clean.png" alt="Idle floor plan" width="240">
   &nbsp;&nbsp;
-  <img src="docs/images/map-camera.png" alt="Live map during cleaning with the robot trail and detected obstacles" width="240">
+  <img src="docs/images/map-camera.png" alt="Live map during cleaning showing the robot trail" width="240">
 </p>
-<p align="center"><sub>Left: idle floor plan. Right: live map during cleaning — robot trail and detected obstacles.</sub></p>
+<p align="center"><sub>Left: idle floor plan. Right: live map during cleaning, showing the robot trail.</sub></p>
 
 ### Connectivity
 - Real-time WebSocket push updates, auto-reconnect with exponential backoff
