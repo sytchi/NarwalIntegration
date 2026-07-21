@@ -12,7 +12,9 @@ This is an actively maintained continuation of [sjmotew/NarwalIntegration](https
 
 [![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sytchi&repository=NarwalIntegration&category=integration)
 
-![Live map camera](docs/images/map-camera.png)
+<p align="center">
+  <img src="docs/images/map-camera.png" alt="Live map camera with colored room segments, robot trail and detected obstacles" width="360">
+</p>
 
 ## Device Compatibility
 
@@ -207,8 +209,6 @@ map_modes:
         zone: "[[selection]]"
         entity_id: "[[entity_id]]"
 ```
-
-![Map card](docs/images/map-card.png)
 
 ## Requirements
 
