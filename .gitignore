@@ -36,7 +36,7 @@ htmlcov/
 .env.local
 
 # --- Reverse engineering artifacts (kept locally, not in repo) ---
-tools/
+tools/*.pcap
 captures/
 proto/
 apk/
