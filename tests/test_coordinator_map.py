@@ -8,10 +8,7 @@ Covers MAP-04 (post-cleaning map refresh) validation gaps:
 
 from __future__ import annotations
 
-import sys
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
-
-import pytest
+from unittest.mock import MagicMock
 
 # Install HA stubs before any custom_components import
 import tests.ha_stubs  # noqa: E402

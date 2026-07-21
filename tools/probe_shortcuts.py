@@ -18,18 +18,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import websockets
-import websockets.exceptions
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from narwal_client.client import NarwalClient
 from narwal_client.protocol import (
     PROTOBUF_FIELD5_TAG,
     ProtocolError,
     build_frame,
     parse_frame,
 )
-from narwal_client.const import DEFAULT_TOPIC_PREFIX as TOPIC_PREFIX
-from narwal_client.client import NarwalClient
 
 # ── Config ──────────────────────────────────────────────────────────────
 HOST = "192.168.x.x"
@@ -200,7 +196,7 @@ async def send_and_capture(ws, full_topic: str, payload: bytes, timeout: float =
             break
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 0.5))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
 
         if not isinstance(data, bytes) or len(data) < 4:
@@ -237,7 +233,7 @@ async def drain_ws(ws, seconds: float):
             break
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 0.5))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
         if not isinstance(data, bytes) or len(data) < 4:
             continue
@@ -267,7 +263,7 @@ async def listen_for_shortcut_broadcasts(ws, full_prefix: str, seconds: float):
             break
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=min(remaining, 0.5))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
         if not isinstance(data, bytes) or len(data) < 4:
             continue
@@ -415,7 +411,7 @@ async def main():
         await client.disconnect()
     except Exception:
         pass
-    log(f"\nDisconnected.")
+    log("\nDisconnected.")
 
     # ── Summary ──────────────────────────────────────────────────────────
     log_raw(f"\n{B}{'='*65}{X}")

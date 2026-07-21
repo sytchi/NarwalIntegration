@@ -6,22 +6,19 @@ on the NarwalVacuum entity using HA stubs.
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 # Install HA stubs before any custom_components import
 import tests.ha_stubs  # noqa: E402
 
 tests.ha_stubs.install()
 
-from narwal_client.const import CleanMode  # noqa: E402
-from narwal_client.models import MapData, NarwalState, RoomInfo  # noqa: E402
-from custom_components.narwal.vacuum import NarwalVacuum  # noqa: E402
-
 # Grab Segment class from stubs for assertions
 import sys
+
+from custom_components.narwal.vacuum import NarwalVacuum  # noqa: E402
+from narwal_client.const import CleanMode  # noqa: E402
+from narwal_client.models import MapData, NarwalState, RoomInfo  # noqa: E402
 
 Segment = sys.modules["homeassistant.components.vacuum"].Segment
 

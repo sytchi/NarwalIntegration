@@ -9,13 +9,13 @@ import tests.ha_stubs  # noqa: E402
 
 tests.ha_stubs.install()
 
-from narwal_client.const import CleanMode  # noqa: E402
 from custom_components.narwal.const import (  # noqa: E402
     CLEAN_MODE_LIST,
     DEFAULT_CLEAN_MODE,
 )
 from custom_components.narwal.select import NarwalCleanModeSelect  # noqa: E402
 from custom_components.narwal.vacuum import NarwalVacuum  # noqa: E402
+from narwal_client.const import CleanMode  # noqa: E402
 
 
 def _make_coordinator() -> MagicMock:

@@ -120,15 +120,14 @@ class TestNarwalConfigFlow:
         with patch(
             "custom_components.narwal.config_flow.NarwalClient",
             return_value=mock_client,
-        ):
-            with pytest.raises(AbortFlow, match="already_configured"):
-                await flow.async_step_user(
-                    user_input={
-                        "host": "10.0.0.100",
-                        "port": 9002,
-                        "model": "Narwal Flow",
-                    },
-                )
+        ), pytest.raises(AbortFlow, match="already_configured"):
+            await flow.async_step_user(
+                user_input={
+                    "host": "10.0.0.100",
+                    "port": 9002,
+                    "model": "Narwal Flow",
+                },
+            )
 
         flow.async_set_unique_id.assert_awaited_once_with("duplicate_device")
         mock_client.disconnect.assert_awaited_once()

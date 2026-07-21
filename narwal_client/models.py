@@ -9,7 +9,7 @@ from typing import Any, ClassVar
 
 _LOGGER = logging.getLogger(__name__)
 
-from .const import CommandResult, FanLevel, MopHumidity, WorkingStatus
+from .const import CommandResult, WorkingStatus
 
 
 @dataclass

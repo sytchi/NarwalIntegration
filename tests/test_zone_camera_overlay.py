@@ -83,6 +83,7 @@ def test_start_clean_rooms_clears_zones() -> None:
 
 def test_render_overlay_with_zone_returns_png() -> None:
     from PIL import Image
+
     from narwal_client.map_renderer import render_overlay
     base = Image.new("RGB", (60, 80), (20, 20, 20))
     png = render_overlay(base, 80, zones=[(5, 5, 30, 40)])

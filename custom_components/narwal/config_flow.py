@@ -6,12 +6,10 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
-from .narwal_client import NarwalClient, NarwalCommandError, NarwalConnectionError
-
 from .const import CONF_MODEL, CONF_PRODUCT_KEY, DEFAULT_PORT, DOMAIN, NARWAL_MODELS
+from .narwal_client import NarwalClient
 
 _LOGGER = logging.getLogger(__name__)
 

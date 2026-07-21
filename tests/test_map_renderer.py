@@ -12,12 +12,10 @@ import io
 import zlib
 
 from narwal_client.map_renderer import (
+    OBSTACLE_COLOR_DEFAULT,
+    OBSTACLE_COLORS,
     render_base_map,
     render_overlay,
-    decompress_map,
-    _decode_packed_varints,
-    OBSTACLE_COLORS,
-    OBSTACLE_COLOR_DEFAULT,
 )
 from narwal_client.models import ObstacleInfo
 
@@ -170,7 +168,6 @@ class TestRenderOverlay:
 
     def test_does_not_modify_base(self) -> None:
         """render_overlay does not mutate the base image."""
-        from PIL import Image
         base = self._make_base_image()
         # Save original pixel for comparison
         original_pixel = base.getpixel((15, 15))
@@ -249,7 +246,6 @@ class TestObstacleRendering:
 
     def test_empty_obstacles_same_as_no_obstacles(self) -> None:
         """render_base_map with empty obstacles list produces same output as without."""
-        from PIL import Image
 
         width, height = 20, 20
         compressed = _make_room_grid(width, height, room_id=1)
@@ -282,7 +278,6 @@ class TestObstacleRendering:
 
     def test_obstacle_modifies_image(self) -> None:
         """An in-bounds obstacle should change some pixels compared to no-obstacle render."""
-        from PIL import Image
 
         width, height = 40, 40
         compressed = _make_room_grid(width, height, room_id=1)

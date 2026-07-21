@@ -11,12 +11,11 @@ from homeassistant.components.button import ButtonEntity, ButtonEntityDescriptio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .narwal_client.client import NarwalClient
-from .narwal_client.const import CommandResult
-
 from . import NarwalConfigEntry
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
+from .narwal_client.client import NarwalClient
+from .narwal_client.const import CommandResult
 
 _LOGGER = logging.getLogger(__name__)
 

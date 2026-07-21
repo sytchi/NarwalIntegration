@@ -17,6 +17,10 @@ from __future__ import annotations
 import io
 import logging
 import zlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL import Image, ImageDraw
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -232,7 +236,7 @@ def _darken(color: tuple[int, int, int], amount: int = 80) -> tuple[int, int, in
 
 
 def _draw_dock(
-    draw: "ImageDraw.ImageDraw",
+    draw: ImageDraw.ImageDraw,
     dock_x: int,
     dock_y: int,
     size: int = 6,
@@ -250,7 +254,7 @@ def _draw_dock(
 
 
 def _draw_robot(
-    draw: "ImageDraw.ImageDraw",
+    draw: ImageDraw.ImageDraw,
     rx: int,
     ry: int,
     heading: float | None,
@@ -395,7 +399,7 @@ def render_map_png(
     if room_names:
         try:
             font = ImageFont.truetype("arial.ttf", 10)
-        except (IOError, OSError):
+        except OSError:
             font = ImageFont.load_default()
         for rid, name in room_names.items():
             if not name or rid not in room_count:
@@ -438,10 +442,10 @@ def render_base_map(
     dock_x: float | None = None,
     dock_y: float | None = None,
     room_names: dict[int, str] | None = None,
-    obstacles: "list | None" = None,
+    obstacles: list | None = None,
     origin_x: int = 0,
     origin_y: int = 0,
-) -> "Image.Image | None":
+) -> Image.Image | None:
     """Render the static floor plan as a PIL Image (no robot overlay).
 
     Returns a PIL Image that can be cached and reused across frames.
@@ -512,7 +516,7 @@ def render_base_map(
     if room_names:
         try:
             font = ImageFont.truetype("arial.ttf", 10)
-        except (IOError, OSError):
+        except OSError:
             font = ImageFont.load_default()
         for rid, name in room_names.items():
             if not name or rid not in room_count:
@@ -532,7 +536,7 @@ def render_base_map(
     if obstacles:
         try:
             obs_font = ImageFont.truetype("arial.ttf", 8)
-        except (IOError, OSError):
+        except OSError:
             obs_font = ImageFont.load_default()
         for obs in obstacles:
             gx, gy = obs.to_grid_coords(origin_x, origin_y)
@@ -568,7 +572,7 @@ def render_base_map(
 
 
 def render_overlay(
-    base_img: "Image.Image",
+    base_img: Image.Image,
     height: int,
     robot_x: float | None = None,
     robot_y: float | None = None,
