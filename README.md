@@ -13,25 +13,27 @@ This is an actively maintained continuation of [sjmotew/NarwalIntegration](https
 [![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sytchi&repository=NarwalIntegration&category=integration)
 
 <p align="center">
-  <img src="docs/images/map-camera.png" alt="Live map camera with colored room segments, robot trail and detected obstacles" width="360">
+  <img src="docs/images/map-clean.png" alt="Color-coded floor plan with per-room segments and dock marker" width="340">
 </p>
 
 ## Device Compatibility
 
 This integration uses a **local WebSocket connection on port 9002**. Only models that expose this port are supported.
 
+**The only fully supported and actively maintained model is the Narwal Flow** — it is the one I own, develop against and test every release on. The other models below are marked *probably working*: they worked on the original upstream integration before this fork, but I cannot re-test them, so this fork's newer features and fixes are unverified on them. Reports (positive or negative) are very welcome.
+
 | Model | Status | Notes |
 |-------|--------|-------|
-| **Narwal Flow** (AX12) | **Working** | Primary development target, validated on firmware up to v01.08.03. |
-| **Narwal Flow 2** (QxMSPG6VSO) | **Working** | Room labels use Flow 2 names ([upstream #22](https://github.com/sjmotew/NarwalIntegration/issues/22)) |
-| **Freo Z10 Ultra** (CX4) | **Working** | Community confirmed |
-| **Freo X10 Pro** (AX15) | **Working** | Community confirmed ([upstream #12](https://github.com/sjmotew/NarwalIntegration/issues/12)) |
-| **Freo Z Ultra** (CX7) | **Not Compatible** | Port 9002 open but no local broadcasts; cloud-only ([upstream #5](https://github.com/sjmotew/NarwalIntegration/issues/5)) |
-| **Freo X Ultra** (AX18/AX19) | **Not Compatible** | Uses ZeroMQ (port 6789) + Tuya cloud, not WebSocket ([upstream #4](https://github.com/sjmotew/NarwalIntegration/issues/4)) |
-| **Freo X Plus** | **Not Compatible** | Cloud-only — no local API |
-| **Narwal J-series** (J1/J4/J5) | **Not Compatible** | J1: HTTP-only (port 8080); J4/J5: cloud-only (Tuya) |
+| **Narwal Flow** (AX12) | ✅ **Fully supported** | The one supported and maintained model. All features developed and validated here, on firmware up to v01.08.03. |
+| **Narwal Flow 2** (QxMSPG6VSO) | 🟡 Probably working | Worked on the upstream integration before this fork; not re-tested here. Room labels use Flow 2 names ([upstream #22](https://github.com/sjmotew/NarwalIntegration/issues/22)). |
+| **Freo Z10 Ultra** (CX4) | 🟡 Probably working | Community-confirmed on the upstream integration before this fork; not re-tested here. |
+| **Freo X10 Pro** (AX15) | 🟡 Probably working | Community-confirmed on the upstream integration before this fork; not re-tested here ([upstream #12](https://github.com/sjmotew/NarwalIntegration/issues/12)). |
+| **Freo Z Ultra** (CX7) | ❌ Not compatible | Port 9002 open but no local broadcasts; cloud-only ([upstream #5](https://github.com/sjmotew/NarwalIntegration/issues/5)) |
+| **Freo X Ultra** (AX18/AX19) | ❌ Not compatible | Uses ZeroMQ (port 6789) + Tuya cloud, not WebSocket ([upstream #4](https://github.com/sjmotew/NarwalIntegration/issues/4)) |
+| **Freo X Plus** | ❌ Not compatible | Cloud-only — no local API |
+| **Narwal J-series** (J1/J4/J5) | ❌ Not compatible | J1: HTTP-only (port 8080); J4/J5: cloud-only (Tuya) |
 
-Models marked **Not Compatible** use a different protocol or are cloud-only. This is a hardware/firmware limitation.
+Models marked **Not compatible** use a different protocol or are cloud-only. This is a hardware/firmware limitation.
 
 **Other models?** Check with `nmap -p 9002 <your-vacuum-ip>`. If open, [open an issue](https://github.com/sytchi/NarwalIntegration/issues/new/choose) with your model and results.
 
@@ -63,6 +65,13 @@ Models marked **Not Compatible** use a different protocol or are cloud-only. Thi
 - Furniture/obstacle overlay from the robot's stored map data
 - Dock marker and live robot trail during cleaning (~1.5 s refresh)
 - **Active zone overlay** — rectangles sent via `narwal.clean_zone` are drawn on the map
+
+<p align="center">
+  <img src="docs/images/map-clean.png" alt="Idle floor plan" width="240">
+  &nbsp;&nbsp;
+  <img src="docs/images/map-camera.png" alt="Live map during cleaning with the robot trail and detected obstacles" width="240">
+</p>
+<p align="center"><sub>Left: idle floor plan. Right: live map during cleaning — robot trail and detected obstacles.</sub></p>
 
 ### Connectivity
 - Real-time WebSocket push updates, auto-reconnect with exponential backoff
