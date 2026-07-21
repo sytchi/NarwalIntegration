@@ -214,11 +214,11 @@ class TestNarwalState:
         state.update_from_base_status({"3": {"1": 4}})
         assert not state.is_paused
 
-    def test_unknown_working_status_value(self) -> None:
-        """Unmapped working_status value falls back to UNKNOWN."""
+    def test_error_working_status_value(self) -> None:
+        """Value 99 maps to the ERROR placeholder status."""
         state = NarwalState()
         state.update_from_base_status({"3": {"1": 99}})
-        assert state.working_status == WorkingStatus.UNKNOWN
+        assert state.working_status == WorkingStatus.ERROR
 
     def test_update_from_base_status(self) -> None:
         state = NarwalState()

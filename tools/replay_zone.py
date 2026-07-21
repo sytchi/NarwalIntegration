@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import blackboxprotobuf
 
 from narwal_client.client import NarwalClient
-from narwal_client.const import CommandResult, TOPIC_CMD_CLEAN_TASK
+from narwal_client.const import TOPIC_CMD_CLEAN_TASK, CommandResult
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for local config.py
 try:

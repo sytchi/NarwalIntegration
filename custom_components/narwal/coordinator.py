@@ -11,10 +11,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .const import DEFAULT_CLEAN_MODE, DOMAIN
 from .narwal_client import NarwalClient, NarwalConnectionError, NarwalState
 from .narwal_client.const import WorkingStatus
-
-from .const import DEFAULT_CLEAN_MODE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 

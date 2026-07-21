@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import filecmp
 import os
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import tests.ha_stubs
 
@@ -26,15 +24,17 @@ class TestCLN01PlatformRegistration:
 
     def test_platform_camera_in_platforms(self) -> None:
         """Platform.CAMERA is registered in PLATFORMS list."""
-        from custom_components.narwal.const import PLATFORMS
         from homeassistant.const import Platform
+
+        from custom_components.narwal.const import PLATFORMS
 
         assert Platform.CAMERA in PLATFORMS
 
     def test_platform_image_not_in_platforms(self) -> None:
         """Platform.IMAGE is NOT in PLATFORMS (CameraEntity is used, not ImageEntity)."""
-        from custom_components.narwal.const import PLATFORMS
         from homeassistant.const import Platform
+
+        from custom_components.narwal.const import PLATFORMS
 
         assert Platform.IMAGE not in PLATFORMS
 

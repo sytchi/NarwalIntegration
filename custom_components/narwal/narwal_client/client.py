@@ -14,8 +14,11 @@ import websockets.exceptions
 
 from .const import (
     BROADCAST_STALE_TIMEOUT,
+    CLEAN_MODE_TO_TASK_TYPE,
+    CLEAN_MODE_TO_V2,
     COMMAND_RESPONSE_TIMEOUT,
     DEFAULT_PORT,
+    DEFAULT_TOPIC_PREFIX,
     HEARTBEAT_INTERVAL,
     KEEPALIVE_INTERVAL,
     KNOWN_PRODUCT_KEYS,
@@ -37,21 +40,17 @@ from .const import (
     TOPIC_CMD_GET_MAP,
     TOPIC_CMD_NOTIFY_APP_EVENT,
     TOPIC_CMD_PAUSE,
-    TOPIC_CMD_PING,
     TOPIC_CMD_RECALL,
     TOPIC_CMD_RESUME,
     TOPIC_CMD_SET_FAN_LEVEL,
+    TOPIC_CMD_SET_LED,
     TOPIC_CMD_SET_MOP_HUMIDITY,
     TOPIC_CMD_START_CLEAN,
     TOPIC_CMD_START_CLEAN_LEGACY,
     TOPIC_CMD_TAKE_PICTURE,
-    TOPIC_CMD_SET_LED,
     TOPIC_CMD_WASH_MOP,
     TOPIC_CMD_YELL,
-    DEFAULT_TOPIC_PREFIX,
     WAKE_TIMEOUT,
-    CLEAN_MODE_TO_TASK_TYPE,
-    CLEAN_MODE_TO_V2,
     CleanMode,
     CommandResult,
     FanLevel,
@@ -226,7 +225,7 @@ class NarwalClient:
                 data = await asyncio.wait_for(
                     self._ws.recv(), timeout=min(remaining, 2.0)
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Re-send wake commands, cycling through prefixes
                 try:
                     await self._ws.send(wake_frames[wake_index % len(wake_frames)])
@@ -292,7 +291,7 @@ class NarwalClient:
             try:
                 data = await asyncio.wait_for(self._ws.recv(), timeout=0.05)
                 drained += 1
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
             except Exception:
                 break
@@ -791,7 +790,7 @@ class NarwalClient:
                     msg = await asyncio.wait_for(
                         self._response_queue.get(), timeout=timeout
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise NarwalCommandError(
                         f"No response for command '{short_topic}' within {timeout}s"
                     ) from None
@@ -835,7 +834,7 @@ class NarwalClient:
                 data = await asyncio.wait_for(
                     self._ws.recv(), timeout=min(remaining, 1.0)
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             if not isinstance(data, bytes) or len(data) < 4:

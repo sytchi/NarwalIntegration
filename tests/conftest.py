@@ -6,7 +6,6 @@ import pytest
 
 from narwal_client.protocol import build_frame
 
-
 # --- Sample frames for testing ---
 
 # A minimal valid frame with topic "status/working_status" and a small protobuf payload

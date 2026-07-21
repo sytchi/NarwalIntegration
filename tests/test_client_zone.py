@@ -207,6 +207,7 @@ class TestRoomStartClean:
 
     def test_room_payload_type1_and_mode(self) -> None:
         import blackboxprotobuf
+
         from narwal_client.const import CleanMode
 
         client = self._client()

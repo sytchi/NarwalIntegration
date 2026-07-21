@@ -15,12 +15,11 @@ from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfArea, UnitOfTi
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .narwal_client import NarwalState, WorkingStatus
-
 from . import NarwalConfigEntry
 from .const import ERROR_CODE_SLUGS, ERROR_HELP_URL_TEMPLATE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
+from .narwal_client import NarwalState, WorkingStatus
 
 
 @dataclass(frozen=True, kw_only=True)

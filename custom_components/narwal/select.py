@@ -9,12 +9,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .narwal_client import MopHumidity
-
 from . import NarwalConfigEntry
 from .const import CLEAN_MODE_LIST
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
+from .narwal_client import MopHumidity
 
 _LOGGER = logging.getLogger(__name__)
 

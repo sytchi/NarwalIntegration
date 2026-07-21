@@ -15,9 +15,9 @@ import tests.ha_stubs  # noqa: E402
 
 tests.ha_stubs.install()
 
-from narwal_client.models import NarwalState  # noqa: E402
-from narwal_client.const import WorkingStatus  # noqa: E402
 from custom_components.narwal.vacuum import NarwalVacuum  # noqa: E402
+from narwal_client.const import WorkingStatus  # noqa: E402
+from narwal_client.models import NarwalState  # noqa: E402
 
 
 def _make_vacuum(state: NarwalState | None = None) -> NarwalVacuum:

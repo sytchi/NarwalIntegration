@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-
 from typing import Any
 
 from homeassistant.components.vacuum import (
@@ -19,12 +18,11 @@ except ImportError:
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .narwal_client import CleanMode, CommandResult, FanLevel, NarwalCommandError, WorkingStatus
-
 from . import NarwalConfigEntry
 from .const import CLEAN_MODE_MAP, FAN_SPEED_LIST, FAN_SPEED_MAP
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
+from .narwal_client import CleanMode, CommandResult, WorkingStatus
 
 _LOGGER = logging.getLogger(__name__)
 
