@@ -27,8 +27,20 @@ from narwal_client.protocol import (
     parse_frame,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for local config.py
+try:
+    from config import ROBOT_HOST as HOST
+except ImportError:
+    import os
+
+    HOST = os.environ.get("NARWAL_HOST", "")
+    if not HOST:
+        raise SystemExit(
+            "Robot IP not set. Copy tools/config.example.py to tools/config.py "
+            "and set ROBOT_HOST, or set the NARWAL_HOST environment variable."
+        )
+
 # ── Config ──────────────────────────────────────────────────────────────
-HOST = "192.168.x.x"
 PORT = 9002
 RESPONSE_TIMEOUT = 10.0   # seconds to wait for response per command
 INTER_CMD_DELAY = 2.0     # seconds between commands
