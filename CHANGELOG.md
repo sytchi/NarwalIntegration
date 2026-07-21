@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-07-22
+
+### Fixed
+- **Manifest requirements** no longer force a pip install/downgrade on modern
+  Home Assistant. `websockets` and `protobuf` are provided by HA core; the
+  1.5.0 upper bounds (`websockets<14`, `protobuf<6`) excluded the versions HA
+  ships (websockets 15.x, protobuf 6.x), which on Python 3.14 could fail to
+  reinstall for lack of a matching wheel. Requirements are now
+  `websockets>=12.0`, `bbpb>=1.4.0`, `Pillow>=9.0.0` (satisfied by HA's
+  bundled versions; `protobuf` is pulled transitively by `bbpb`).
+
 ## [1.5.0] - 2026-07-21
 
 First public release of this fork.
@@ -103,4 +114,5 @@ Upstream baseline: [sjmotew/NarwalIntegration](https://github.com/sjmotew/Narwal
 — local WebSocket vacuum control, sensors, live map camera with room labels,
 room cleaning, config flow.
 
+[1.5.1]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.5.1
 [1.5.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.5.0
