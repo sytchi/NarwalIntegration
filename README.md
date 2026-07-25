@@ -10,6 +10,26 @@ A fully **local, cloud-independent** [Home Assistant](https://www.home-assistant
 
 This is an actively maintained continuation of [sjmotew/NarwalIntegration](https://github.com/sjmotew/NarwalIntegration), adding clean modes, zone cleaning, per-room cleaning, station controls, extra sensors, readable error states and a number of firmware-compatibility fixes. See [What this fork adds](#what-this-fork-adds) and the [CHANGELOG](CHANGELOG.md).
 
+> ## ⚠️ Breaking changes in 2.0
+>
+> **The map changed. If you use a map card or zone automations, read this before upgrading.**
+>
+> - 🗺️ **The legacy 1:1 `camera.*_map` entity is GONE.** Only the high-resolution
+>   **`camera.*_map_hd`** remains. Any dashboard, card or automation pointing at
+>   `camera.*_map` will break — repoint it to `camera.*_map_hd`.
+> - 📐 **`narwal.clean_zone` no longer accepts map-image pixel coordinates.**
+>   Zones are now **always robot world coordinates** (what the map card sends
+>   with `calibration_source: {camera: true}`). The old `coordinates` field is
+>   still accepted so your automations don't error, **but it is ignored** — a
+>   call that used to send `pixels` will now be treated as world and clean the
+>   wrong area.
+>
+> **Migration:** switch your map card to `camera.*_map_hd` with
+> `calibration_source: {camera: true}` (example [below](#map-card-rooms--zones-from-the-dashboard)),
+> and drop any `coordinates: pixels` from your `clean_zone` calls. Deprecation
+> was announced in 1.6.0. Staying on the old map? Pin the integration to
+> `v1.6.0` in HACS.
+
 [![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sytchi&repository=NarwalIntegration&category=integration)
 
 <p align="center">
@@ -61,14 +81,13 @@ Models marked **Not compatible** use a different protocol or are cloud-only. Thi
 - Docked (binary sensor), charging state (Charging / Fully Charged / Not Charging)
 
 ### Live Map (HD)
-Two camera entities render the robot's map:
+The **`camera.*_map_hd`** entity renders the robot's map: the grid is upscaled
+4× by default (configurable 2–6× in the integration options) with crisp
+NEAREST-upscaled rooms, anti-aliased vector overlays, and a real
+**`calibration_points`** attribute for map cards.
 
-- **`camera.*_map_hd`** — the high-resolution map (grid upscaled 4× by default,
-  configurable 2–6× in the integration options). Crisp NEAREST-upscaled rooms,
-  anti-aliased vector overlays, and a real **`calibration_points`** attribute
-  for map cards.
-- **`camera.*_map`** — legacy 1:1 render (image pixel == map grid cell), kept
-  for setups using identity calibration.
+> The legacy 1:1 `camera.*_map` entity was **removed in 2.0.0** — see the
+> [migration note](#-breaking-changes-in-20).
 
 Layers drawn on the map (each toggleable with a switch entity):
 
@@ -79,8 +98,10 @@ Layers drawn on the map (each toggleable with a switch entity):
   with the freshest tail reconstructed from live positions
 - **Cleaned area** — the freshly vacuumed 11.4 cm track exactly as the robot
   reports it (the strip between the display_map "rails")
-- **Lidar walls** — wall/obstacle cells the robot actually measured while
-  driving, shaded like slightly darker walls
+- **Lidar cells** — wall/obstacle cells the robot actually measured while
+  driving. Carpet-flagged cells render as a light tint above the floor (like
+  the Narwal app); wall-adjacent cells take the wall shade; free-standing
+  detections are minimally darker. Carpet persists across sessions
 - **Planned path** — the thin line showing where the robot is about to go
 - **Active zone overlay** — rectangles sent via `narwal.clean_zone`
 - Dock marker and live robot position (~2 s refresh; positions fall back to
@@ -157,7 +178,6 @@ After setup, open the integration's **Configure** dialog to adjust:
 |--------|------|-------|
 | `vacuum.*` | vacuum | start / stop / pause / return / locate / fan speed |
 | `camera.*_map_hd` | camera | high-resolution live map (all layers, `calibration_points`) |
-| `camera.*_map` | camera | legacy 1:1 map render (deprecated — removal in 2.0.0) |
 | `switch.*_draw_trail`, `*_draw_cleaned_area`, `*_draw_furniture`, `*_draw_lidar_walls` | switch | map layer visibility (restored across restarts) |
 | `select.*_clean_mode` | select | sweep / mop / sweep_mop / sweep_then_mop |
 | `select.*_mop_humidity` | select | dry / normal / wet |
@@ -188,10 +208,8 @@ Room segment ids match the numbers in the Narwal app / `vacuum/get_segments`.
 
 ### `narwal.clean_zone`
 
-Clean one or more rectangles. Corner order doesn't matter. Two coordinate
-contracts are supported, chosen with the optional `coordinates` field: the
-pre-1.6 **map-image pixels** (default, backwards compatible) and the new
-**robot world (map-frame) coordinates** — exactly what `xiaomi-vacuum-map-card`
+Clean one or more rectangles. Corner order doesn't matter. Values are **robot
+world (map-frame) coordinates** — exactly what `xiaomi-vacuum-map-card`
 produces as `[[selection]]` with `calibration_source: {camera: true}` from the
 HD camera's `calibration_points` attribute (negative values are normal there —
 the map origin is not the map corner).
@@ -203,24 +221,12 @@ target:
 data:
   zone: [[-21, -23, 29, 29]]
   fan_speed: normal    # optional: quiet / normal / strong / max
-  coordinates: world   # optional: pixels (default) / world / auto
 ```
 
-The `coordinates` parameter selects the coordinate contract:
-
-| Value | Meaning |
-|-------|---------|
-| `pixels` *(default)* | Map-image pixels of the 1:1 `camera.*_map` — the pre-1.6 contract. **Existing configs keep working unchanged.** |
-| `world` | Robot world/map frame — what the map card sends with camera calibration on the HD camera. The new (1.6 experimental) mode. |
-| `auto` | Detect from the values (negative → world, above the world range → pixels). Unreliable on maps whose origin is close to (0, 0). |
-
-Safety net: negative values are impossible as pixels, so a call containing
-one is always treated as world.
-
-> **Deprecation plan:** 2.0.0 will drop the pixel contract and default to
-> world coordinates; the `coordinates` parameter will still be accepted (and
-> ignored) so existing calls won't error. If you use zones, plan to migrate
-> your card to the HD camera + camera calibration before then.
+> **Changed in 2.0.0:** the legacy map-image **pixel** contract was removed —
+> zones are always world coordinates now. The old `coordinates` field is still
+> accepted so pre-2.0 automations don't error, but it is ignored. See
+> [Breaking changes in 2.0](#-breaking-changes-in-20).
 
 ### `narwal.resume`
 
@@ -243,18 +249,9 @@ a few seconds, then call `narwal.resume` — this auto-recovers the common
 
 For an interactive map we recommend Piotr Machowski's
 [`xiaomi-vacuum-map-card`](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card)
-(available in HACS). As of 1.6 there are two supported setups:
-
-- **HD camera + camera calibration** *(new in 1.6, experimental — becomes the
-  default in 2.0)*: the HD camera exposes the **`calibration_points`**
-  attribute the card needs, selections arrive in robot world coordinates and
-  feed `narwal.clean_zone` (with `coordinates: world`) / `narwal.clean_rooms`
-  directly.
-- **Legacy 1:1 camera + identity calibration** *(pre-1.6 setups)*: keeps
-  working as-is — pixel selections go through the default
-  `coordinates: pixels` contract. No changes required after upgrading.
-
-The recommended (new) setup:
+(available in HACS). The HD camera exposes the **`calibration_points`**
+attribute the card needs; selections arrive in robot world coordinates and feed
+`narwal.clean_zone` / `narwal.clean_rooms` directly:
 
 ```yaml
 type: custom:xiaomi-vacuum-map-card
@@ -285,16 +282,12 @@ map_modes:
       service_data:
         zone: "[[selection]]"
         entity_id: "[[entity_id]]"
-        coordinates: world
 ```
 
 Notes:
 
 - With camera calibration the card scales automatically to whatever
   `map_scale` you configure — no re-calibration needed.
-- The legacy `camera.*_map` (1:1) with `calibration_source: {identity: true}`
-  keeps working unchanged (the default `coordinates: pixels` contract), but is
-  deprecated — it will be removed in 2.0.0 together with the pixel contract.
 - The map layer switches (`switch.*_draw_*`) pair nicely with the card view —
   add them as tiles under the map to declutter it on demand.
 

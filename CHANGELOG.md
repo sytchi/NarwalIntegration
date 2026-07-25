@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-25
+
+> ### ⚠️ BREAKING CHANGES — the map changed
+>
+> If you use a **map card** or **zone automations**, act before upgrading.
+
+### Removed
+- **The legacy 1:1 `camera.*_map` entity is gone.** Only the high-resolution
+  `camera.*_map_hd` remains. Any dashboard card, picture entity or automation
+  referencing `camera.*_map` **will break** — repoint it to
+  `camera.*_map_hd`.
+- **The map-image pixel coordinate contract of `narwal.clean_zone` is gone.**
+  Zones are now **always robot world coordinates** — exactly what
+  `xiaomi-vacuum-map-card` sends with `calibration_source: {camera: true}`.
+  The `coordinates` service field is still accepted (so pre-2.0 automations
+  keep validating) **but is ignored**: a call that used to pass `pixels`
+  is now interpreted as world coordinates and would clean the wrong area.
+  Drop `coordinates: pixels` from your `clean_zone` calls.
+
+### Migration
+- Point your map card at `camera.*_map_hd` with
+  `calibration_source: {camera: true}` (see the README's map-card example).
+  The card then produces world coordinates automatically and needs no
+  re-calibration when you change `map_scale`.
+- The deprecation was announced in 1.6.0. Not ready to migrate? Pin the
+  integration to **v1.6.0** in HACS.
+
 ## [1.6.0] - 2026-07-25
 
 ### Added

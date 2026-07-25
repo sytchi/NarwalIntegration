@@ -1,11 +1,11 @@
-"""Map camera entities for Narwal vacuum — MJPEG streaming for live updates.
+"""Map camera entity for Narwal vacuum — MJPEG streaming for live updates.
 
-Two cameras are created:
-  - "Map": legacy 1:1 grid-resolution render (image pixel == grid cell),
-    kept for card configs using ``calibration_source: {identity: true}``.
-  - "Map HD": upscaled render (``map_scale`` option, default 4×) with
-    anti-aliased overlays and real ``calibration_points`` attributes for
-    card configs using ``calibration_source: {camera: true}``.
+One camera is created: ``camera.*_map_hd`` — an upscaled render
+(``map_scale`` option, default 4×) with anti-aliased overlays and real
+``calibration_points`` attributes for card configs using
+``calibration_source: {camera: true}``.
+
+The legacy 1:1 ``camera.*_map`` entity was removed in 2.0.0.
 """
 
 from __future__ import annotations
@@ -52,13 +52,10 @@ async def async_setup_entry(
     entry: NarwalConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Narwal map camera entities."""
+    """Set up the Narwal map camera entity."""
     coordinator = entry.runtime_data
     hd_scale = entry.options.get(CONF_MAP_SCALE, DEFAULT_MAP_SCALE)
-    async_add_entities([
-        NarwalMapCamera(coordinator),
-        NarwalMapCamera(coordinator, scale=hd_scale, hd=True),
-    ])
+    async_add_entities([NarwalMapCamera(coordinator, scale=hd_scale)])
 
 
 class NarwalMapCamera(NarwalEntity, Camera):
@@ -70,22 +67,19 @@ class NarwalMapCamera(NarwalEntity, Camera):
     _unrecorded_attributes = frozenset({"render_count", "calibration_points"})
 
     def __init__(
-        self, coordinator: NarwalCoordinator, scale: int = 1, hd: bool = False,
+        self, coordinator: NarwalCoordinator, scale: int = 4,
     ) -> None:
-        """Initialize a map camera entity.
+        """Initialize the HD map camera entity.
 
         Args:
-            scale: Base-map upscale factor (1 = native grid resolution).
-            hd: True for the high-resolution camera (separate unique_id,
-                exposes calibration_points).
+            scale: Base-map upscale factor (the ``map_scale`` option).
         """
         NarwalEntity.__init__(self, coordinator)
         Camera.__init__(self)
         device_id = coordinator.config_entry.data["device_id"]
         self._scale = max(1, int(scale))
-        self._hd = hd
-        self._attr_name = "Map HD" if hd else "Map"
-        self._attr_unique_id = f"{device_id}_map_hd" if hd else f"{device_id}_map"
+        self._attr_name = "Map HD"
+        self._attr_unique_id = f"{device_id}_map_hd"
         self._cached_image: bytes | None = None
         self._cache_key: tuple = ()
         self._last_render_time: float = 0.0
@@ -140,7 +134,7 @@ class NarwalMapCamera(NarwalEntity, Camera):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Expose render count (HD camera also exposes calibration_points).
+        """Expose render count and calibration_points.
 
         render_count changes on every render so HA detects state changes
         for MJPEG refresh. calibration_points let xiaomi-vacuum-map-card
@@ -148,18 +142,17 @@ class NarwalMapCamera(NarwalEntity, Camera):
         (``calibration_source: {camera: true}``).
         """
         attrs: dict = {"render_count": self._render_count}
-        if self._hd:
-            static_map = self.coordinator.client.state.map_data
-            if static_map and static_map.width > 0 and static_map.height > 0:
-                from .narwal_client.map_renderer import compute_calibration_points
+        static_map = self.coordinator.client.state.map_data
+        if static_map and static_map.width > 0 and static_map.height > 0:
+            from .narwal_client.map_renderer import compute_calibration_points
 
-                attrs["calibration_points"] = compute_calibration_points(
-                    static_map.width,
-                    static_map.height,
-                    static_map.origin_x,
-                    static_map.origin_y,
-                    self._scale,
-                )
+            attrs["calibration_points"] = compute_calibration_points(
+                static_map.width,
+                static_map.height,
+                static_map.origin_x,
+                static_map.origin_y,
+                self._scale,
+            )
         return attrs
 
     def _record_debug_viewport(self, x: float, y: float) -> None:

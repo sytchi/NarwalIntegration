@@ -1,10 +1,10 @@
-"""Tests for narwal.clean_zone (async_clean_zone) — coordinate contracts.
+"""Tests for narwal.clean_zone (async_clean_zone).
 
-The `coordinates` parameter selects the contract: "pixels" (DEFAULT —
-the pre-1.6 map-image-pixel behavior, kept for backwards compatibility),
-"world" (the new mode, what the card sends with camera calibration), or
-"auto" (range-based detection). Negative values are impossible as pixels
-and are treated as world even in pixels mode.
+Since 2.0.0 zones are ALWAYS robot world coordinates. The legacy map-image
+pixel contract (and its "auto"/"pixels" detection/conversion) was removed;
+the `coordinates` parameter is still accepted so pre-2.0 calls don't error,
+but its value is ignored — nothing is ever converted and the map is never
+fetched for coordinate conversion.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ def _make_vacuum(state: NarwalState | None = None) -> NarwalVacuum:
     coordinator.client.start_zone = AsyncMock(
         return_value=MagicMock(result_code=0, success=True)
     )
+    coordinator.client.get_map = AsyncMock()
     coordinator.last_update_success = True
 
     vac = NarwalVacuum.__new__(NarwalVacuum)
@@ -52,7 +53,7 @@ class TestCleanZoneWorldPassthrough:
         """World rects (incl. negatives) reach start_zone without transform."""
         vac = _make_vacuum()
         await vac.async_clean_zone(
-            zone=[[-21, -23, 29, 29], [10, -120, 40, -90]], coordinates="world",
+            zone=[[-21, -23, 29, 29], [10, -120, 40, -90]],
         )
         args, kwargs = vac.coordinator.client.start_zone.await_args
         assert args[0] == [(-21, -23, 29, 29), (10, -120, 40, -90)]
@@ -60,16 +61,14 @@ class TestCleanZoneWorldPassthrough:
 
     async def test_x1_y2_single_rect(self) -> None:
         vac = _make_vacuum()
-        await vac.async_clean_zone(x1=-5, y1=-10, x2=15, y2=20, coordinates="world")
+        await vac.async_clean_zone(x1=-5, y1=-10, x2=15, y2=20)
         args, _ = vac.coordinator.client.start_zone.await_args
         assert args[0] == [(-5, -10, 15, 20)]
 
     async def test_float_coords_rounded(self) -> None:
         """Card may send floats (rounding off) — they are rounded to ints."""
         vac = _make_vacuum()
-        await vac.async_clean_zone(
-            zone=[[-20.6, -22.4, 28.5, 29.49]], coordinates="world",
-        )
+        await vac.async_clean_zone(zone=[[-20.6, -22.4, 28.5, 29.49]])
         args, _ = vac.coordinator.client.start_zone.await_args
         assert args[0] == [(-21, -22, 28, 29)]
 
@@ -78,15 +77,12 @@ class TestCleanZoneWorldPassthrough:
         await vac.async_clean_zone()
         vac.coordinator.client.start_zone.assert_not_awaited()
 
-    async def test_negative_world_needs_no_map(self) -> None:
-        """Rects with negative values are world — no get_map for detection."""
-        vac = _make_vacuum(state=None)
-        await vac.async_clean_zone(zone=[[-5, 0, 10, 10]], coordinates="auto")
-        vac.coordinator.client.start_zone.assert_awaited_once()
-        vac.coordinator.client.get_map.assert_not_called()
+    async def test_default_is_world(self) -> None:
+        """No `coordinates` parameter = world passthrough, no conversion.
 
-    async def test_default_is_pixels(self) -> None:
-        """No parameter = the pre-1.6 pixel contract (backwards compat)."""
+        Uses large positive values that the old pixel contract would have
+        transformed; here they must reach start_zone untouched.
+        """
         vac = _make_vacuum(state=MagicMock())
         map_data = MagicMock()
         map_data.width = 200
@@ -96,19 +92,13 @@ class TestCleanZoneWorldPassthrough:
         vac.coordinator.data.map_data = map_data
         await vac.async_clean_zone(zone=[[120, 197, 161, 210]])
         args, _ = vac.coordinator.client.start_zone.await_args
-        assert args[0] == [(73, -157, 114, -144)]
-
-    async def test_default_pixels_negative_safety(self) -> None:
-        """Negative values are impossible as pixels — treated as world even
-        without the parameter (protects world callers that forget it)."""
-        vac = _make_vacuum(state=None)
-        await vac.async_clean_zone(zone=[[-21, -23, 29, 29]])
-        args, _ = vac.coordinator.client.start_zone.await_args
-        assert args[0] == [(-21, -23, 29, 29)]
+        assert args[0] == [(120, 197, 161, 210)]
         vac.coordinator.client.get_map.assert_not_called()
 
 
-class TestLegacyPixelDetection:
+class TestCoordinatesParamIgnored:
+    """The legacy `coordinates` field is accepted but has no effect."""
+
     def _vac_with_map(self):
         vac = _make_vacuum(state=MagicMock())
         map_data = MagicMock()
@@ -119,50 +109,27 @@ class TestLegacyPixelDetection:
         vac.coordinator.data.map_data = map_data
         return vac
 
-    async def test_legacy_pixels_converted(self) -> None:
-        """Old identity-px rect (values above the world range) is converted
-        with the pre-1.6 transform. Real values: the Bar zone."""
+    async def test_coordinates_pixels_no_longer_converts(self) -> None:
+        """A pre-2.0 call with coordinates=pixels now passes through as world
+        (the pixel transform is gone) and never fetches the map."""
         vac = self._vac_with_map()
-        await vac.async_clean_zone(zone=[[120, 197, 161, 210]], coordinates="auto")
+        await vac.async_clean_zone(
+            zone=[[120, 197, 161, 210]], coordinates="pixels",
+        )
         args, _ = vac.coordinator.client.start_zone.await_args
-        # to_world(120,197)=(73,-144), to_world(161,210)=(114,-157)
-        assert args[0] == [(73, -157, 114, -144)]
+        assert args[0] == [(120, 197, 161, 210)]
+        vac.coordinator.client.get_map.assert_not_called()
 
-    async def test_ambiguous_treated_as_world(self) -> None:
-        """In auto mode a rect that fits both ranges stays world."""
+    async def test_coordinates_auto_ignored(self) -> None:
         vac = self._vac_with_map()
         await vac.async_clean_zone(zone=[[0, 0, 10, 10]], coordinates="auto")
         args, _ = vac.coordinator.client.start_zone.await_args
         assert args[0] == [(0, 0, 10, 10)]
+        vac.coordinator.client.get_map.assert_not_called()
 
-    async def test_explicit_world_skips_detection(self) -> None:
-        """coordinates=world passes big positive values through untouched
-        (auto would have classified them as legacy pixels)."""
-        vac = self._vac_with_map()
-        await vac.async_clean_zone(zone=[[120, 197, 161, 210]], coordinates="world")
+    async def test_coordinates_arbitrary_string_accepted(self) -> None:
+        """Any string is accepted (schema is cv.string) and ignored."""
+        vac = _make_vacuum()
+        await vac.async_clean_zone(zone=[[-5, 0, 10, 10]], coordinates="whatever")
         args, _ = vac.coordinator.client.start_zone.await_args
-        assert args[0] == [(120, 197, 161, 210)]
-
-    async def test_explicit_pixels_always_converts(self) -> None:
-        """coordinates=pixels converts even ambiguous (in-range) rects,
-        which auto would have treated as world."""
-        vac = self._vac_with_map()
-        await vac.async_clean_zone(zone=[[0, 0, 10, 10]], coordinates="pixels")
-        args, _ = vac.coordinator.client.start_zone.await_args
-        # to_world(0,0)=(-47,53), to_world(10,10)=(-37,43)
-        assert args[0] == [(-47, 43, -37, 53)]
-
-    async def test_explicit_pixels_without_map_aborts(self) -> None:
-        """Pixels cannot be converted without a map — no start_zone call."""
-        vac = _make_vacuum(state=None)
-        vac.coordinator.client.get_map = AsyncMock(side_effect=Exception("asleep"))
-        await vac.async_clean_zone(zone=[[10, 10, 20, 20]], coordinates="pixels")
-        vac.coordinator.client.start_zone.assert_not_awaited()
-
-    async def test_no_map_available_assumes_world(self) -> None:
-        """Auto detection impossible without a map — pass through as world."""
-        vac = _make_vacuum(state=None)
-        vac.coordinator.client.get_map = AsyncMock(side_effect=Exception("asleep"))
-        await vac.async_clean_zone(zone=[[120, 197, 161, 210]], coordinates="auto")
-        args, _ = vac.coordinator.client.start_zone.await_args
-        assert args[0] == [(120, 197, 161, 210)]
+        assert args[0] == [(-5, 0, 10, 10)]
