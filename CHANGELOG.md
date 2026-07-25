@@ -5,6 +5,96 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-07-25
+
+### Added
+- **High-resolution map camera** `camera.*_map_hd`: the map grid is upscaled
+  (NEAREST, crisp room edges) with anti-aliased vector overlays (supersampled
+  RGBA layer downsampled with BOX) — rendering technique adapted from Piotr
+  Machowski's Xiaomi Cloud Map Extractor (MIT). The legacy 1:1 `camera.*_map`
+  remains for identity-calibration setups.
+- **`calibration_points` attribute** on the HD camera — three vacuum↔image
+  point pairs computed live from the active map, ready for
+  `xiaomi-vacuum-map-card` with `calibration_source: {camera: true}` (stays
+  correct across map scale changes and remaps).
+- **Options flow**: `map_scale` (2–6, default 4) controls the HD camera's
+  upscale factor.
+- **Robot-recorded trail**: the trail line follows the midline of the
+  display_map "rails" (field 12 — the robot's own path record), with the
+  freshest tail reconstructed from live positions and replaced as new rail
+  data arrives.
+- **Vacuumed strip**: the freshly vacuumed 11.4 cm track exactly as the robot
+  reports it (the strip between the field-12 rail pair), drawn bright and
+  semi-transparent.
+- **Planned trajectory**: `status/point_navi_plan_traj` (previously
+  subscribed but dropped) is decoded and drawn as a thin line showing where
+  the robot is about to go; docking anomaly frames are filtered.
+- **Lidar cell marks**: incremental wall/obstacle observations (display_map
+  field 7) accumulate per saved map. Cells the robot flags as **carpet**
+  (field-7 low-byte bit 2) render as a light tint just above the floor
+  colour (matching the Narwal app's carpet shading); cells adjacent to a
+  saved-map wall take the wall shade; free-standing detections render
+  minimally darker than the floor. Every cell is inset ~0.5 px so the grid
+  reads cleanly rather than as a solid blob.
+- **Carpet persistence**: carpet cells survive across cleaning sessions
+  (they describe the home, not one run), while the noisier non-carpet lidar,
+  trail and vacuumed-strip buffers are cleared when a new session starts.
+- **Furniture rendering**: rectangles honor the robot's rotation angle
+  (previously ignored), get a translucent interior fill, and their labels use
+  a smaller font placed below the shape with collision avoidance — room names
+  always win.
+- **Map layer switches**: `switch.*_draw_trail`, `*_draw_cleaned_area`,
+  `*_draw_furniture`, `*_draw_lidar_walls` (config category, state restored
+  across restarts) toggle each overlay; the furniture switch also rebuilds
+  the cached base map.
+- **Robot-position fallback**: when display_map drops out mid-clean (30 s+
+  gaps on fw v01.08.03+), the robot marker and trail keep moving using the
+  planned-trajectory head — whichever broadcast is freshest wins.
+- Bundled DejaVuSans font (the HA container ships no TrueType fonts; the
+  sized Pillow fallback renders e.g. "ó" as tofu).
+
+### Performance
+- **Event-loop stalls eliminated.** The map camera used to redraw every
+  accumulated swath quad and lidar cell on every frame — an O(total) cost
+  that grew through a clean and, holding the GIL, stalled Home Assistant's
+  event loop up to ~3.9 s on a large map. Swath and lidar are now painted
+  once onto persistent RGBA layers and only the *new* cells are drawn each
+  frame (O(new)), so per-frame cost stays flat for the whole session.
+  Measured under a full live clean: CPU flat at 4–19 %, render latency
+  ≤360 ms, zero multi-second stalls (see the map-performance page in the
+  docs).
+- **Adaptive render cadence**: the camera renders on demand and throttles
+  redundant frames instead of on a fixed fast timer.
+- A batch of low-risk render/loop optimizations (cached base-map reuse,
+  cheaper coordinate transforms, fewer per-frame allocations).
+
+### Changed
+- **`narwal.clean_zone` gained an optional `coordinates` parameter**
+  selecting the coordinate contract: `pixels` (the DEFAULT — the pre-1.6
+  map-image-pixel behavior, so **existing configs keep working unchanged**),
+  `world` (the new, experimental mode: robot world/map-frame values, exactly
+  what the map card sends with camera calibration on the HD camera), or
+  `auto` (range-based detection; unreliable on maps whose origin is close
+  to (0, 0)). Safety net: a call containing any negative value (impossible
+  as pixels) is treated as world.
+- Camera `extra_state_attributes` still exposes `render_count`; the HD
+  camera adds `calibration_points`.
+
+### Deprecated
+- The map-image **pixel contract of `narwal.clean_zone`** and the legacy 1:1
+  `camera.*_map` entity. **2.0.0** will remove both and default to world
+  coordinates; the `coordinates` parameter will still be accepted (and
+  ignored) so existing service calls won't error. Migrate map cards to the
+  HD camera with `calibration_source: {camera: true}`.
+
+### Fixed
+- Field-7 blobs with a corrupted adler32 checksum are decoded via raw
+  deflate instead of being dropped.
+- **Zone cleaning overlay no longer hides progress**: the active-zone amber
+  fill was painted *on top* of the vacuumed strip and lidar cells, so during
+  a zone clean the cleaned area was invisible. Zones are now drawn underneath
+  those overlays.
+
 ## [1.5.1] - 2026-07-22
 
 ### Fixed
@@ -114,5 +204,15 @@ Upstream baseline: [sjmotew/NarwalIntegration](https://github.com/sjmotew/Narwal
 — local WebSocket vacuum control, sensors, live map camera with room labels,
 room cleaning, config flow.
 
+[1.6.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.6.0
 [1.5.1]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.5.1
 [1.5.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.5.0
+[1.4.3]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.4.2]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.4.1]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.4.0]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.3.0]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.2.0]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.1.0]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.0.1]: https://github.com/sytchi/NarwalIntegration/blob/master/CHANGELOG.md
+[1.0.0]: https://github.com/sjmotew/NarwalIntegration

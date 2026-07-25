@@ -56,7 +56,14 @@ from .const import (
     FanLevel,
     MopHumidity,
 )
-from .models import CommandResponse, DeviceInfo, MapData, MapDisplayData, NarwalState
+from .models import (
+    CommandResponse,
+    DeviceInfo,
+    MapData,
+    MapDisplayData,
+    NarwalState,
+    PlannedTrajectory,
+)
 from .protocol import (
     PROTOBUF_FIELD5_TAG,
     NarwalMessage,
@@ -419,8 +426,14 @@ class NarwalClient:
             self.state.update_from_upgrade_status(decoded)
         elif short_topic == "status/download_status":
             self.state.update_from_download_status(decoded)
+        elif short_topic == "status/point_navi_plan_traj":
+            traj = PlannedTrajectory.from_broadcast(decoded)
+            traj.received_at = time.monotonic()
+            self.state.planned_trajectory = traj
         elif short_topic == "map/display_map":
-            self.state.map_display_data = MapDisplayData.from_broadcast(decoded)
+            disp = MapDisplayData.from_broadcast(decoded)
+            disp.received_at = time.monotonic()
+            self.state.map_display_data = disp
             self._last_display_map_time = time.monotonic()
             _LOGGER.debug(
                 "display_map received: robot=(%.2f, %.2f) ts=%d",
@@ -863,8 +876,14 @@ class NarwalClient:
                 self.state.update_from_upgrade_status(decoded)
             elif short_topic == "status/download_status":
                 self.state.update_from_download_status(decoded)
+            elif short_topic == "status/point_navi_plan_traj":
+                traj = PlannedTrajectory.from_broadcast(decoded)
+                traj.received_at = time.monotonic()
+                self.state.planned_trajectory = traj
             elif short_topic == "map/display_map":
-                self.state.map_display_data = MapDisplayData.from_broadcast(decoded)
+                disp = MapDisplayData.from_broadcast(decoded)
+                disp.received_at = time.monotonic()
+                self.state.map_display_data = disp
 
         raise NarwalCommandError(
             f"No field5 response within {timeout}s"

@@ -86,5 +86,10 @@ def test_render_overlay_with_zone_returns_png() -> None:
 
     from narwal_client.map_renderer import render_overlay
     base = Image.new("RGB", (60, 80), (20, 20, 20))
-    png = render_overlay(base, 80, zones=[(5, 5, 30, 40)])
+    png = render_overlay(base, 60, 80, zones=[(5, 5, 30, 40)])
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    # Amber fill must tint pixels inside the zone (grid (17, 22) is inside;
+    # image y = 80 - 1 - 22 = 57)
+    import io as _io
+    img = Image.open(_io.BytesIO(png))
+    assert img.getpixel((17, 57)) != (20, 20, 20)

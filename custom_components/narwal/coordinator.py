@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from datetime import timedelta
 
@@ -22,6 +23,24 @@ POLL_INTERVAL = timedelta(seconds=60)
 # Fast re-poll when state is incomplete (robot asleep at startup)
 FAST_POLL_INTERVAL = timedelta(seconds=10)
 FAST_POLL_MAX = 6  # up to 60s of fast polling before falling back to normal
+
+# Cleaning trail (shared by all map cameras). Positions are recorded with
+# full float precision on every display_map broadcast (~1.5s) that moved
+# the robot at least _TRAIL_MIN_DIST grid cells — dense while driving,
+# nothing while parked.
+TRAIL_MAX_POINTS = 50000  # full cleaning session worth
+TRAIL_MIN_DIST = 0.5  # grid cells (~3 cm) between recorded points
+
+# Vacuumed strip accumulated from display_map field 12 rails (quads between
+# the two parallel rail polylines) — cleared with the trail on new sessions.
+SWATH_QUADS_MAX = 20000
+
+# Lidar wall/obstacle observations accumulated from display_map field 7 —
+# bounded by the map size. Non-carpet cells are cleared on each new cleaning
+# session (fresh scan); CARPET cells (value & LIDAR_CARPET_FLAG) persist across
+# sessions as a stable property of the home, clearing only when the map changes.
+LIDAR_CELLS_MAX = 60000
+LIDAR_CARPET_FLAG = 0x04  # low-byte bit2 = carpet (see map_renderer)
 
 
 class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
@@ -61,6 +80,35 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
         self._fast_poll_remaining = 0
         self._prev_working_status = WorkingStatus.UNKNOWN
         self._map_fetch_pending = False
+        # Cleaning trail in grid coordinates — single source shared by all
+        # map camera entities. Cleared when a new cleaning session starts.
+        self.trail: list[tuple[float, float]] = []
+        self._trail_last: tuple[float, float] | None = None
+        self._was_cleaning_session = False
+        # Vacuumed strip quads (grid coords, from field 12 rails) and the
+        # lidar wall observations (grid cells, from field 7).
+        self.swath_quads: list[tuple] = []
+        self._swath_seen: set[tuple[int, int]] = set()
+        # Robot-recorded path: midline between the field-12 rails (grid
+        # coords, ordered along the path, deduped with the quads).
+        self.rail_trail: list[tuple[float, float]] = []
+        # Index into `trail` where the pose-history TAIL begins: everything
+        # before it is superseded by the robot-recorded rail midline; the
+        # tail (rails lag ~2 cells) is drawn from pose history as before
+        # and replaced whenever new rail data arrives.
+        self.rail_trail_split: int = 0
+        # Ordered (append-only, deduped via _lidar_seen) so a map camera can
+        # slice only the newly-added cells by index each frame instead of
+        # scanning the whole set on the event loop.
+        self.lidar_cells: list[tuple[int, int, int]] = []  # (cx, cy, value)
+        self._lidar_seen: set[tuple[int, int]] = set()
+        self._lidar_map_ts: int = 0
+        # Map layer visibility flags (controlled by the layer switches,
+        # restored by them on startup; default: everything visible)
+        self.draw_trail: bool = True
+        self.draw_cleaned_area: bool = True
+        self.draw_furniture: bool = True
+        self.draw_lidar_walls: bool = True
         self._last_display_map_resub: float = 0.0
         self._consecutive_failures = 0
         self._max_failures = 5  # 5 * 60s = 5 minutes before entities go unavailable
@@ -185,6 +233,8 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
                     f"{DOMAIN}_resub",
                 )
 
+        self._update_trail(state)
+
         self.async_set_updated_data(state)
 
         # Broadcast arrived — switch back to normal polling if in fast mode
@@ -195,6 +245,127 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
                 "Broadcast received (status=%s) — normal polling restored",
                 state.working_status.name,
             )
+
+    def _update_trail(self, state: NarwalState) -> None:
+        """Record the robot position to the shared cleaning trail.
+
+        Clears the trail when a new cleaning session starts. Uses a
+        minimum-distance filter instead of a timer so the trail is dense
+        while the robot moves and doesn't grow while it's parked.
+        """
+        # Session-transition detection (skip transient UNKNOWN so a
+        # broadcast dropout doesn't fake a "new session" and wipe the trail)
+        if state.working_status != WorkingStatus.UNKNOWN:
+            is_cleaning = state.is_cleaning_session
+            if is_cleaning and not self._was_cleaning_session:
+                _LOGGER.info("New cleaning session — clearing trail/strip/non-carpet lidar")
+                self.trail.clear()
+                self._trail_last = None
+                self.swath_quads.clear()
+                self._swath_seen.clear()
+                self.rail_trail.clear()
+                self.rail_trail_split = 0
+                # Drop non-carpet lidar hits (re-scanned this session); keep
+                # carpet cells — they persist across sessions.
+                self.lidar_cells[:] = [
+                    c for c in self.lidar_cells if c[2] & LIDAR_CARPET_FLAG
+                ]
+                self._lidar_seen = {(c[0], c[1]) for c in self.lidar_cells}
+            self._was_cleaning_session = is_cleaning
+
+        self._update_map_layers(state)
+
+        static_map = state.map_data
+        if not static_map:
+            return
+        # Freshest pose from display_map OR the planned-trajectory head, so
+        # the trail keeps growing through display_map dropouts.
+        pose = state.best_robot_position()
+        if pose is None:
+            return
+        grid_pos = (
+            pose[0] - static_map.origin_x,
+            pose[1] - static_map.origin_y,
+        )
+        if len(self.trail) >= TRAIL_MAX_POINTS:
+            return
+        last = self._trail_last
+        if last is not None and math.hypot(
+            grid_pos[0] - last[0], grid_pos[1] - last[1],
+        ) < TRAIL_MIN_DIST:
+            return
+        self.trail.append(grid_pos)
+        self._trail_last = grid_pos
+
+    def _update_map_layers(self, state: NarwalState) -> None:
+        """Accumulate the vacuumed strip (field 12) and lidar walls (field 7).
+
+        Field 12 delivers a sliding window of the recent path as two
+        parallel rails; consecutive rail-point pairs form quads that are
+        deduped by their midpoint so overlapping windows don't re-add.
+        Field 7 delivers incremental lidar wall/obstacle cell observations
+        (row-major indexes, stride = map width); they persist across
+        cleaning sessions and reset when the saved map changes.
+        """
+        display = state.map_display_data
+        static_map = state.map_data
+        if not display or not static_map or static_map.width <= 0:
+            return
+        ox, oy = static_map.origin_x, static_map.origin_y
+
+        # Reset lidar accumulation when the saved map changes
+        map_ts = static_map.created_at or 0
+        if map_ts != self._lidar_map_ts:
+            self.lidar_cells.clear()
+            self._lidar_seen.clear()
+            self._lidar_map_ts = map_ts
+
+        if display.wall_cells and len(self.lidar_cells) < LIDAR_CELLS_MAX:
+            w, h = static_map.width, static_map.height
+            for idx, val in display.wall_cells:
+                cx, cy = idx % w, idx // w
+                if 0 <= cx < w and 0 <= cy < h:
+                    cell = (cx, cy)
+                    if cell not in self._lidar_seen:
+                        self._lidar_seen.add(cell)
+                        # Keep the per-cell value so the renderer can colour
+                        # cells by classification (diagnostic: carpet vs wall).
+                        self.lidar_cells.append((cx, cy, val))
+
+        if len(display.rail_paths) == 2 and len(self.swath_quads) < SWATH_QUADS_MAX:
+            r0, r1 = display.rail_paths
+            n = min(len(r0), len(r1))
+            rails_extended = False
+            for i in range(n - 1):
+                mid_x = (r0[i][0] + r1[i][0] + r0[i + 1][0] + r1[i + 1][0]) / 4
+                mid_y = (r0[i][1] + r1[i][1] + r0[i + 1][1] + r1[i + 1][1]) / 4
+                key = (round(mid_x * 4), round(mid_y * 4))
+                if key in self._swath_seen:
+                    continue
+                self._swath_seen.add(key)
+                self.swath_quads.append((
+                    (r0[i][0] - ox, r0[i][1] - oy),
+                    (r0[i + 1][0] - ox, r0[i + 1][1] - oy),
+                    (r1[i + 1][0] - ox, r1[i + 1][1] - oy),
+                    (r1[i][0] - ox, r1[i][1] - oy),
+                ))
+                # Midline polyline for the trail (robot's own path record)
+                if len(self.rail_trail) < TRAIL_MAX_POINTS:
+                    if not self.rail_trail:
+                        self.rail_trail.append((
+                            (r0[i][0] + r1[i][0]) / 2 - ox,
+                            (r0[i][1] + r1[i][1]) / 2 - oy,
+                        ))
+                    self.rail_trail.append((
+                        (r0[i + 1][0] + r1[i + 1][0]) / 2 - ox,
+                        (r0[i + 1][1] + r1[i + 1][1]) / 2 - oy,
+                    ))
+                    rails_extended = True
+            if rails_extended:
+                # New rail data supersedes the pose-history prefix — the
+                # rendered tail restarts from the current trail length
+                # (this frame's pose is appended right after this call).
+                self.rail_trail_split = len(self.trail)
 
     async def _fetch_missing_map(self) -> None:
         """Fetch static map when it's missing (get_map failed at startup)."""

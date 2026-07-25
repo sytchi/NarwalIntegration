@@ -19,6 +19,19 @@
       "already_configured": "This vacuum is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Narwal options",
+        "data": {
+          "map_scale": "Map HD render scale"
+        },
+        "data_description": {
+          "map_scale": "Upscale factor for the Map HD camera image (higher = sharper, more CPU)."
+        }
+      }
+    }
+  },
   "entity": {
     "vacuum": {
       "vacuum": {
@@ -151,6 +164,20 @@
           "sweep_mop": "Vacuum & mop",
           "sweep_then_mop": "Vacuum then mop"
         }
+      }
+    },
+    "switch": {
+      "draw_trail": {
+        "name": "Draw trail"
+      },
+      "draw_cleaned_area": {
+        "name": "Draw cleaned area"
+      },
+      "draw_furniture": {
+        "name": "Draw furniture"
+      },
+      "draw_lidar_walls": {
+        "name": "Draw lidar walls"
       }
     }
   }

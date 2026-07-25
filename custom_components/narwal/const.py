@@ -24,12 +24,19 @@ NARWAL_MODELS: dict[str, str] = {
 CONF_MODEL = "model"
 CONF_PRODUCT_KEY = "product_key"
 
+# Options
+CONF_MAP_SCALE = "map_scale"
+DEFAULT_MAP_SCALE = 4
+MIN_MAP_SCALE = 2
+MAX_MAP_SCALE = 6
+
 PLATFORMS: list[Platform] = [
     Platform.VACUUM,
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.SELECT,
+    Platform.SWITCH,
     Platform.CAMERA,
 ]
 

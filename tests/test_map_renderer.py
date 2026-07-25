@@ -14,6 +14,10 @@ import zlib
 from narwal_client.map_renderer import (
     OBSTACLE_COLOR_DEFAULT,
     OBSTACLE_COLORS,
+    ROOM_COLORS,
+    TRAIL_MAX_RENDER_POINTS,
+    _decimate_trail,
+    compute_calibration_points,
     render_base_map,
     render_overlay,
 )
@@ -77,27 +81,20 @@ class TestRenderBaseMap:
         assert isinstance(result, Image.Image)
         assert result.size == (width, height)
 
-    def test_with_dock_position(self) -> None:
-        """Given MapData with dock_x/dock_y, render_base_map includes dock."""
+    def test_scaled_size_and_nearest_colors(self) -> None:
+        """scale=4 quadruples image dimensions and NEAREST keeps room colors exact."""
         from PIL import Image
 
-        width, height = 30, 30
-        compressed = _make_room_grid(width, height, room_id=2)
+        width, height = 20, 20
+        compressed = _make_room_grid(width, height, room_id=1)
 
-        result = render_base_map(
-            compressed, width, height,
-            dock_x=15.0, dock_y=15.0,
-        )
+        result = render_base_map(compressed, width, height, scale=4)
 
         assert result is not None
         assert isinstance(result, Image.Image)
-        # The dock is drawn as a white circle — check that the center pixel
-        # at the dock position (Y-flipped) is white or near-white
-        dock_px_y = height - 1 - 15  # Y-flip
-        r, g, b = result.getpixel((15, dock_px_y))
-        assert r > 200 and g > 200 and b > 200, (
-            f"Expected white-ish dock pixel, got ({r}, {g}, {b})"
-        )
+        assert result.size == (width * 4, height * 4)
+        # NEAREST upscale must preserve the exact palette color inside a cell
+        assert result.getpixel((10 * 4 + 2, 10 * 4 + 2)) == ROOM_COLORS[0]
 
     def test_empty_compressed_data(self) -> None:
         """Given empty compressed data, returns None gracefully."""
@@ -134,7 +131,7 @@ class TestRenderOverlay:
         """render_overlay returns valid PNG bytes."""
         base = self._make_base_image()
         result = render_overlay(
-            base, height=30,
+            base, 30, 30,
             robot_x=15.0, robot_y=15.0,
             robot_heading=90.0,
         )
@@ -150,7 +147,7 @@ class TestRenderOverlay:
         trail = [(10.0, 10.0), (20.0, 20.0), (30.0, 30.0)]
 
         result = render_overlay(
-            base, height=50,
+            base, 50, 50,
             robot_x=30.0, robot_y=30.0,
             trail=trail,
         )
@@ -158,10 +155,26 @@ class TestRenderOverlay:
         assert isinstance(result, bytes)
         assert result[:8] == b"\x89PNG\r\n\x1a\n"
 
+    def test_with_fractional_trail_points(self) -> None:
+        """Fractional (sub-cell) trail points render without error and hit
+        the expected pixel block (pixel-center convention)."""
+        from PIL import Image
+
+        base = self._make_base_image(width=30, height=30)
+        trail = [(10.5, 10.5), (10.5, 14.5)]
+
+        png = render_overlay(base, 30, 30, trail=trail)
+        img = Image.open(io.BytesIO(png))
+        # Vertical segment at grid x=10.5 → image x = 11.0; spans grid y
+        # 10.5..14.5 → image y ≈ 15..19. Sample a mid pixel and check the
+        # trail blue dominates over the gray base.
+        r, g, b = img.getpixel((11, 17))
+        assert b > r, f"Expected blue-ish trail pixel, got ({r}, {g}, {b})"
+
     def test_no_robot_position(self) -> None:
         """render_overlay works with no robot position (trail only or empty)."""
         base = self._make_base_image()
-        result = render_overlay(base, height=30)
+        result = render_overlay(base, 30, 30)
 
         assert isinstance(result, bytes)
         assert result[:8] == b"\x89PNG\r\n\x1a\n"
@@ -173,11 +186,24 @@ class TestRenderOverlay:
         original_pixel = base.getpixel((15, 15))
 
         render_overlay(
-            base, height=30,
+            base, 30, 30,
             robot_x=15.0, robot_y=15.0,
         )
 
         assert base.getpixel((15, 15)) == original_pixel
+
+    def test_dock_rendered_on_overlay(self) -> None:
+        """The dock is drawn by render_overlay as a white circle."""
+        from PIL import Image
+
+        base = self._make_base_image(width=30, height=30)
+        png = render_overlay(base, 30, 30, dock_x=15.0, dock_y=15.0)
+        img = Image.open(io.BytesIO(png))
+        # Dock center: grid (15, 15) → image (15.5, 14.5)
+        r, g, b = img.getpixel((15, 14))
+        assert r > 200 and g > 200 and b > 200, (
+            f"Expected white-ish dock pixel, got ({r}, {g}, {b})"
+        )
 
     def test_full_pipeline_base_then_overlay(self) -> None:
         """End-to-end: render_base_map then render_overlay produces valid PNG."""
@@ -186,17 +212,17 @@ class TestRenderOverlay:
 
         base = render_base_map(
             compressed, width, height,
-            dock_x=20.0, dock_y=20.0,
             room_names={1: "Living Room"},
         )
         assert base is not None
 
         trail = [(18.0, 18.0), (22.0, 22.0), (25.0, 20.0)]
         png = render_overlay(
-            base, height=height,
+            base, width, height,
             robot_x=25.0, robot_y=20.0,
             robot_heading=45.0,
             trail=trail,
+            dock_x=20.0, dock_y=20.0,
         )
 
         assert isinstance(png, bytes)
@@ -205,6 +231,88 @@ class TestRenderOverlay:
         from PIL import Image
         img = Image.open(io.BytesIO(png))
         assert img.size == (width, height)
+
+    def test_scaled_pipeline_keeps_scaled_size(self) -> None:
+        """With scale=4 the overlay output matches the scaled base size."""
+        from PIL import Image
+
+        width, height = 20, 20
+        compressed = _make_room_grid(width, height, room_id=1)
+        base = render_base_map(compressed, width, height, scale=4)
+        assert base is not None
+
+        png = render_overlay(
+            base, width, height, scale=4,
+            robot_x=10.0, robot_y=10.0, robot_heading=0.0,
+            trail=[(5.0, 5.0), (10.0, 10.0)],
+        )
+        img = Image.open(io.BytesIO(png))
+        assert img.size == (width * 4, height * 4)
+
+    def test_antialiasing_smoke(self) -> None:
+        """A diagonal trail at scale=4/supersample=2 produces intermediate
+        colors (anti-aliasing) — a hard-edged line would have exactly two
+        distinct colors in its bounding box."""
+        from PIL import Image
+
+        width, height = 20, 20
+        base = Image.new("RGB", (width * 4, height * 4), (100, 100, 100))
+        # Shallow (non-45°) angle exercises varied pixel-coverage fractions
+        trail = [(3.0, 4.0), (16.0, 9.5)]
+
+        png = render_overlay(base, width, height, scale=4, trail=trail)
+        img = Image.open(io.BytesIO(png))
+        # Sample the bbox around the line. A hard-edged (aliased) line has
+        # exactly 2 colors here: pure trail + pure base.
+        colors = set()
+        for x in range(3 * 4, 16 * 4):
+            for y in range(2 * 4, 18 * 4):
+                colors.add(img.getpixel((x, y)))
+        assert len(colors) > 2, (
+            f"Expected anti-aliased gradient (>2 colors), got {len(colors)}"
+        )
+
+
+class TestTrailDecimation:
+    """Tests for _decimate_trail()."""
+
+    def test_short_trail_untouched(self) -> None:
+        trail = [(float(i), float(i)) for i in range(100)]
+        assert _decimate_trail(trail) is trail
+
+    def test_long_trail_capped_and_keeps_tail(self) -> None:
+        trail = [(float(i), 0.0) for i in range(20000)]
+        result = _decimate_trail(trail)
+        assert len(result) <= TRAIL_MAX_RENDER_POINTS + 1
+        # The recent tail is preserved at full fidelity
+        assert result[-200:] == trail[-200:]
+
+
+class TestCalibrationPoints:
+    """Tests for compute_calibration_points()."""
+
+    def test_live_map_scale_4(self) -> None:
+        """Values for the real map (200x271, origin -47/-217) at scale 4."""
+        points = compute_calibration_points(200, 271, -47, -217, 4)
+        assert points == [
+            {"vacuum": {"x": -47, "y": 53}, "map": {"x": 0, "y": 0}},
+            {"vacuum": {"x": 152, "y": 53}, "map": {"x": 796, "y": 0}},
+            {"vacuum": {"x": -47, "y": -217}, "map": {"x": 0, "y": 1080}},
+        ]
+
+    def test_scale_1_identity(self) -> None:
+        """At scale 1 the map coords match raw grid pixel corners."""
+        points = compute_calibration_points(200, 271, -47, -217, 1)
+        assert points[0] == {
+            "vacuum": {"x": -47, "y": 53}, "map": {"x": 0, "y": 0},
+        }
+        assert points[1]["map"] == {"x": 199, "y": 0}
+        assert points[2]["map"] == {"x": 0, "y": 270}
+        # Round-trip check with the verified affine: world = px + origin
+        # for X, world = (h-1+origin_y) - py for Y.
+        for p in points:
+            assert p["vacuum"]["x"] == p["map"]["x"] + (-47)
+            assert p["vacuum"]["y"] == (271 - 1 + (-217)) - p["map"]["y"]
 
 
 class TestObstacleRendering:
@@ -275,6 +383,42 @@ class TestObstacleRendering:
         )
         assert result is not None
         assert isinstance(result, Image.Image)
+
+    def test_rotated_obstacle_differs_from_axis_aligned(self) -> None:
+        """The robot's angle field rotates the rectangle (was ignored)."""
+        width, height = 40, 40
+        compressed = _make_room_grid(width, height, room_id=1)
+
+        def render(angle: float):
+            return render_base_map(
+                compressed, width, height,
+                obstacles=[ObstacleInfo(
+                    id=1, type_id=14, center_x=20.0, center_y=20.0,
+                    width=12.0, height=4.0, angle=angle,
+                )],
+                origin_x=0, origin_y=0, scale=4,
+            )
+
+        img0 = render(0.0)
+        img45 = render(45.0)
+        assert img0 is not None and img45 is not None
+        assert list(img0.getdata()) != list(img45.getdata())
+
+    def test_obstacle_label_avoids_room_label(self) -> None:
+        """Obstacle label at a room centroid renders without crashing and
+        the layout nudges it clear of the room name (smoke test)."""
+        width, height = 60, 60
+        compressed = _make_room_grid(width, height, room_id=1)
+        result = render_base_map(
+            compressed, width, height,
+            room_names={1: "Gabinet"},
+            obstacles=[ObstacleInfo(
+                id=1, type_id=20, center_x=30.0, center_y=30.0,
+                width=4.0, height=4.0,
+            )],
+            origin_x=0, origin_y=0, scale=4,
+        )
+        assert result is not None
 
     def test_obstacle_modifies_image(self) -> None:
         """An in-bounds obstacle should change some pixels compared to no-obstacle render."""

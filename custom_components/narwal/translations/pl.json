@@ -19,6 +19,19 @@
       "already_configured": "Ten odkurzacz jest już skonfigurowany."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje Narwal",
+        "data": {
+          "map_scale": "Skala renderowania Mapy HD"
+        },
+        "data_description": {
+          "map_scale": "Współczynnik powiększenia obrazu kamery Mapa HD (więcej = ostrzej, większe użycie CPU)."
+        }
+      }
+    }
+  },
   "entity": {
     "vacuum": {
       "vacuum": {
@@ -151,6 +164,20 @@
       },
       "wake": {
         "name": "Obudź robota"
+      }
+    },
+    "switch": {
+      "draw_trail": {
+        "name": "Rysuj ślad"
+      },
+      "draw_cleaned_area": {
+        "name": "Rysuj posprzątany obszar"
+      },
+      "draw_furniture": {
+        "name": "Rysuj meble"
+      },
+      "draw_lidar_walls": {
+        "name": "Rysuj ściany z lidaru"
       }
     }
   }

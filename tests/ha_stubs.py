@@ -82,6 +82,12 @@ def install() -> None:
 
     ha_ce.ConfigFlow = _ConfigFlow  # type: ignore[attr-defined]
     ha_ce.ConfigFlowResult = dict  # type: ignore[attr-defined]
+
+    class _OptionsFlow:
+        """Stub for OptionsFlow base class."""
+
+    ha_ce.OptionsFlow = _OptionsFlow  # type: ignore[attr-defined]
+
     class _ConfigEntry:
         """Subscriptable ConfigEntry stub for TypeAlias usage."""
 

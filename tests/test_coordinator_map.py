@@ -46,6 +46,16 @@ class TestCoordinatorMapRefresh:
         coordinator._map_fetch_pending = False
         coordinator._last_display_map_resub = 0.0
         coordinator._prev_working_status = WorkingStatus.UNKNOWN
+        coordinator.trail = []
+        coordinator._trail_last = None
+        coordinator._was_cleaning_session = False
+        coordinator.swath_quads = []
+        coordinator._swath_seen = set()
+        coordinator.rail_trail = []
+        coordinator.rail_trail_split = 0
+        coordinator.lidar_cells = []
+        coordinator._lidar_seen = set()
+        coordinator._lidar_map_ts = 0
         coordinator.update_interval = None
         coordinator.async_set_updated_data = MagicMock()
         mock_entry.async_create_background_task = MagicMock()

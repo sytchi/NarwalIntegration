@@ -92,14 +92,16 @@ class TestCLN02NarwalClientSync:
         assert self.EMBEDDED.is_dir()
 
     def test_same_file_list(self) -> None:
-        """Both copies have the same set of .py files."""
+        """Both copies have the same set of files (code + bundled fonts)."""
         canonical_py = sorted(
-            f.name for f in self.CANONICAL.rglob("*.py")
-            if "__pycache__" not in str(f)
+            str(f.relative_to(self.CANONICAL)) for f in self.CANONICAL.rglob("*")
+            if f.is_file() and "__pycache__" not in str(f)
+            and f.suffix != ".pyc"
         )
         embedded_py = sorted(
-            f.name for f in self.EMBEDDED.rglob("*.py")
-            if "__pycache__" not in str(f)
+            str(f.relative_to(self.EMBEDDED)) for f in self.EMBEDDED.rglob("*")
+            if f.is_file() and "__pycache__" not in str(f)
+            and f.suffix != ".pyc"
         )
         assert canonical_py == embedded_py, (
             f"File list mismatch:\n"
@@ -108,10 +110,11 @@ class TestCLN02NarwalClientSync:
         )
 
     def test_files_byte_identical(self) -> None:
-        """All .py files are byte-for-byte identical between copies."""
+        """All files (code + bundled fonts) are byte-for-byte identical."""
         canonical_files = sorted(
-            f for f in self.CANONICAL.rglob("*.py")
-            if "__pycache__" not in str(f)
+            f for f in self.CANONICAL.rglob("*")
+            if f.is_file() and "__pycache__" not in str(f)
+            and f.suffix != ".pyc"
         )
         for canonical_file in canonical_files:
             relative = canonical_file.relative_to(self.CANONICAL)

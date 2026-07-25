@@ -25,7 +25,7 @@ This integration uses a **local WebSocket connection on port 9002**. Only models
 | Model | Status | Notes |
 |-------|--------|-------|
 | **Narwal Flow** (AX12) | ✅ **Fully supported** | The one supported and maintained model. All features developed and validated here, on firmware up to v01.08.03. |
-| **Narwal Flow 2** (QxMSPG6VSO) | 🟡 Probably working | Worked on the upstream integration before this fork; not re-tested here. Room labels use Flow 2 names ([upstream #22](https://github.com/sjmotew/NarwalIntegration/issues/22)). |
+| **Narwal Flow 2** | 🟡 Probably working | Worked on the upstream integration before this fork; not re-tested here. Room labels use Flow 2 names ([upstream #22](https://github.com/sjmotew/NarwalIntegration/issues/22)). |
 | **Freo Z10 Ultra** (CX4) | 🟡 Probably working | Community-confirmed on the upstream integration before this fork; not re-tested here. |
 | **Freo X10 Pro** (AX15) | 🟡 Probably working | Community-confirmed on the upstream integration before this fork; not re-tested here ([upstream #12](https://github.com/sjmotew/NarwalIntegration/issues/12)). |
 | **Freo Z Ultra** (CX7) | ❌ Not compatible | Port 9002 open but no local broadcasts; cloud-only ([upstream #5](https://github.com/sjmotew/NarwalIntegration/issues/5)) |
@@ -60,18 +60,42 @@ Models marked **Not compatible** use a different protocol or are cloud-only. Thi
   `severity` attributes for automations
 - Docked (binary sensor), charging state (Charging / Fully Charged / Not Charging)
 
-### Live Map
+### Live Map (HD)
+Two camera entities render the robot's map:
+
+- **`camera.*_map_hd`** — the high-resolution map (grid upscaled 4× by default,
+  configurable 2–6× in the integration options). Crisp NEAREST-upscaled rooms,
+  anti-aliased vector overlays, and a real **`calibration_points`** attribute
+  for map cards.
+- **`camera.*_map`** — legacy 1:1 render (image pixel == map grid cell), kept
+  for setups using identity calibration.
+
+Layers drawn on the map (each toggleable with a switch entity):
+
 - Color-coded floor plan with room labels (user-named and auto-generated)
-- Furniture/obstacle overlay from the robot's stored map data
-- Dock marker and live robot trail during cleaning (~1.5 s refresh)
-- **Active zone overlay** — rectangles sent via `narwal.clean_zone` are drawn on the map
+- **Furniture** from the robot's stored map — rotated outlines with a
+  translucent fill and collision-avoiding labels
+- **Robot trail** — the robot's own recorded path (display_map rail midline),
+  with the freshest tail reconstructed from live positions
+- **Cleaned area** — the freshly vacuumed 11.4 cm track exactly as the robot
+  reports it (the strip between the display_map "rails")
+- **Lidar walls** — wall/obstacle cells the robot actually measured while
+  driving, shaded like slightly darker walls
+- **Planned path** — the thin line showing where the robot is about to go
+- **Active zone overlay** — rectangles sent via `narwal.clean_zone`
+- Dock marker and live robot position (~2 s refresh; positions fall back to
+  the planned-trajectory head during display_map dropouts)
 
 <p align="center">
-  <img src="docs/images/map-clean.png" alt="Idle floor plan" width="240">
+  <img src="docs/images/map-hd-idle.png" alt="Idle HD floor plan" width="240">
   &nbsp;&nbsp;
-  <img src="docs/images/map-camera.png" alt="Live map during cleaning showing the robot trail" width="240">
+  <img src="docs/images/map-hd-cleaning.png" alt="Live HD map during cleaning showing the trail, vacuumed strip, planned path and lidar walls" width="240">
 </p>
-<p align="center"><sub>Left: idle floor plan. Right: live map during cleaning, showing the robot trail.</sub></p>
+<p align="center"><sub>Left: idle floor plan. Right: live map during cleaning — trail, vacuumed strip, planned path and lidar wall marks.</sub></p>
+
+The map layers accumulate during a clean but are drawn **incrementally** so
+per-frame render cost stays flat regardless of session length — see
+[Map rendering performance](docs/performance.md) for the stress-test results.
 
 ### Connectivity
 - Real-time WebSocket push updates, auto-reconnect with exponential backoff
@@ -87,7 +111,7 @@ Everything below is on top of upstream v1.0.0 — see the [CHANGELOG](CHANGELOG.
 | Cleaning | Clean-mode select (incl. sequential **vacuum then mop**), `narwal.clean_zone` (rectangle zones with auto-generated coverage path), `narwal.clean_rooms` (per-room by segment id), whole-house cleaning honoring the selected mode — all via `clean/start_clean`, the only command path recent firmwares actually honor parameters on |
 | Station | Wash mop / dry mop / empty dustbin / wake buttons, mop-humidity select, station-activity sensor |
 | Diagnostics | Error sensor with 48 fault codes translated to readable states (EN/FR/PL), dust-bag health, cleaning progress |
-| Map | Active-zone overlay on the map camera |
+| Map | High-resolution **Map HD** camera (configurable scale, anti-aliased overlays, Polish-diacritics-safe bundled font, `calibration_points` for map cards), robot-recorded trail + freshly vacuumed strip, planned-path line, lidar wall marks, rotated & filled furniture with collision-avoiding labels, active-zone overlay, per-layer visibility switches |
 | Robustness | `narwal.resume` service (recovers false "robot lifted" pauses), correct docked/paused detection on firmware v01.08.03+, `map_id` parsing fix (vacuum.start crash) |
 | Localization | Full Polish translation |
 
@@ -119,12 +143,22 @@ Or manually:
 
 > **Tip:** Assign a static IP to your vacuum in your router.
 
+### Options
+
+After setup, open the integration's **Configure** dialog to adjust:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `map_scale` | 4 | Upscale factor for the HD map camera (2–6). Higher = sharper image, more CPU per render. |
+
 ## Entities
 
 | Entity | Type | Notes |
 |--------|------|-------|
 | `vacuum.*` | vacuum | start / stop / pause / return / locate / fan speed |
-| `camera.*_map` | camera | live map with rooms, trail, dock, active zones |
+| `camera.*_map_hd` | camera | high-resolution live map (all layers, `calibration_points`) |
+| `camera.*_map` | camera | legacy 1:1 map render (deprecated — removal in 2.0.0) |
+| `switch.*_draw_trail`, `*_draw_cleaned_area`, `*_draw_furniture`, `*_draw_lidar_walls` | switch | map layer visibility (restored across restarts) |
 | `select.*_clean_mode` | select | sweep / mop / sweep_mop / sweep_then_mop |
 | `select.*_mop_humidity` | select | dry / normal / wet |
 | `button.*_wash_mop`, `*_dry_mop`, `*_empty_dustbin`, `*_wake_robot` | button | station commands |
@@ -154,18 +188,39 @@ Room segment ids match the numbers in the Narwal app / `vacuum/get_segments`.
 
 ### `narwal.clean_zone`
 
-Clean one or more rectangles. Coordinates are **map-image pixels** (what the
-`xiaomi-vacuum-map-card` produces as `[[selection]]` with identity calibration);
-the integration converts them to robot map coordinates using the map origin.
+Clean one or more rectangles. Corner order doesn't matter. Two coordinate
+contracts are supported, chosen with the optional `coordinates` field: the
+pre-1.6 **map-image pixels** (default, backwards compatible) and the new
+**robot world (map-frame) coordinates** — exactly what `xiaomi-vacuum-map-card`
+produces as `[[selection]]` with `calibration_source: {camera: true}` from the
+HD camera's `calibration_points` attribute (negative values are normal there —
+the map origin is not the map corner).
 
 ```yaml
 action: narwal.clean_zone
 target:
   entity_id: vacuum.narwal_flow_vacuum
 data:
-  zone: [[26, 24, 76, 76]]
-  fan_speed: normal   # optional: quiet / normal / strong / max
+  zone: [[-21, -23, 29, 29]]
+  fan_speed: normal    # optional: quiet / normal / strong / max
+  coordinates: world   # optional: pixels (default) / world / auto
 ```
+
+The `coordinates` parameter selects the coordinate contract:
+
+| Value | Meaning |
+|-------|---------|
+| `pixels` *(default)* | Map-image pixels of the 1:1 `camera.*_map` — the pre-1.6 contract. **Existing configs keep working unchanged.** |
+| `world` | Robot world/map frame — what the map card sends with camera calibration on the HD camera. The new (1.6 experimental) mode. |
+| `auto` | Detect from the values (negative → world, above the world range → pixels). Unreliable on maps whose origin is close to (0, 0). |
+
+Safety net: negative values are impossible as pixels, so a call containing
+one is always treated as world.
+
+> **Deprecation plan:** 2.0.0 will drop the pixel contract and default to
+> world coordinates; the `coordinates` parameter will still be accepted (and
+> ignored) so existing calls won't error. If you use zones, plan to migrate
+> your card to the HD camera + camera calibration before then.
 
 ### `narwal.resume`
 
@@ -186,15 +241,28 @@ a few seconds, then call `narwal.resume` — this auto-recovers the common
 
 ## Map card (rooms + zones from the dashboard)
 
-The map camera pairs nicely with [`xiaomi-vacuum-map-card`](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card). The camera image is a 1:1 render of the robot's map grid, so **identity calibration** works out of the box:
+For an interactive map we recommend Piotr Machowski's
+[`xiaomi-vacuum-map-card`](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card)
+(available in HACS). As of 1.6 there are two supported setups:
+
+- **HD camera + camera calibration** *(new in 1.6, experimental — becomes the
+  default in 2.0)*: the HD camera exposes the **`calibration_points`**
+  attribute the card needs, selections arrive in robot world coordinates and
+  feed `narwal.clean_zone` (with `coordinates: world`) / `narwal.clean_rooms`
+  directly.
+- **Legacy 1:1 camera + identity calibration** *(pre-1.6 setups)*: keeps
+  working as-is — pixel selections go through the default
+  `coordinates: pixels` contract. No changes required after upgrading.
+
+The recommended (new) setup:
 
 ```yaml
 type: custom:xiaomi-vacuum-map-card
 entity: vacuum.narwal_flow_vacuum
 map_source:
-  camera: camera.narwal_flow_map
+  camera: camera.narwal_flow_map_hd
 calibration_source:
-  identity: true
+  camera: true
 map_modes:
   - name: Rooms
     icon: mdi:floor-plan
@@ -206,9 +274,9 @@ map_modes:
         entity_id: "[[entity_id]]"
     predefined_selections:
       - id: "1"
-        icon: {name: "mdi:sofa", x: 50, y: 50}
-        outline: [[10, 10], [90, 10], [90, 90], [10, 90]]
-      # one entry per room; outlines in map-image pixels
+        icon: {name: "mdi:sofa", x: 50, y: -60}
+        outline: [[10, -10], [90, -10], [90, -90], [10, -90]]
+      # one entry per room; outlines in robot world coordinates
   - name: Zone
     icon: mdi:select-drag
     selection_type: MANUAL_RECTANGLE
@@ -217,7 +285,18 @@ map_modes:
       service_data:
         zone: "[[selection]]"
         entity_id: "[[entity_id]]"
+        coordinates: world
 ```
+
+Notes:
+
+- With camera calibration the card scales automatically to whatever
+  `map_scale` you configure — no re-calibration needed.
+- The legacy `camera.*_map` (1:1) with `calibration_source: {identity: true}`
+  keeps working unchanged (the default `coordinates: pixels` contract), but is
+  deprecated — it will be removed in 2.0.0 together with the pixel contract.
+- The map layer switches (`switch.*_draw_*`) pair nicely with the card view —
+  add them as tiles under the map to declutter it on demand.
 
 ## Requirements
 

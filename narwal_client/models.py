@@ -211,6 +211,87 @@ def _to_float32(val: Any) -> float | None:
     return None
 
 
+def _unpack_f32_list(val: Any) -> list[float]:
+    """Unpack a packed repeated float32 field (bytes or latin1 str)."""
+    if isinstance(val, str):
+        val = val.encode("latin1")
+    if not isinstance(val, bytes) or len(val) < 4:
+        return []
+    n = len(val) // 4
+    return list(struct.unpack(f"<{n}f", val[: n * 4]))
+
+
+def _decode_wall_cells(blob: Any) -> list[tuple[int, int]]:
+    """Decode display_map field 7.3: zlib(protobuf{1: packed varint indexes,
+    2: packed varint values}). Returns (cell_index, value) pairs.
+
+    The per-cell ``value`` is a bitfield the robot uses to classify each cell
+    (wall / obstacle / carpet / floor-type …) — not just "wall". Cells with no
+    matching value get 0.
+    """
+    import zlib
+
+    if isinstance(blob, str):
+        blob = blob.encode("latin1")
+    if not isinstance(blob, bytes) or len(blob) < 4:
+        return []
+    try:
+        raw = zlib.decompress(blob)
+    except zlib.error:
+        # Streams from the robot sometimes fail the adler32 check while the
+        # deflate data itself is fine — decode raw deflate past the header.
+        try:
+            start = 2 if blob[:1] == b"\x78" else 0
+            raw = zlib.decompressobj(-15).decompress(blob[start:])
+        except zlib.error:
+            return []
+    if not raw:
+        return []
+
+    def _unpack(payload: bytes) -> list[int]:
+        out: list[int] = []
+        p = 0
+        while p < len(payload):
+            v = 0
+            shift = 0
+            while p < len(payload):
+                b = payload[p]
+                p += 1
+                v |= (b & 0x7F) << shift
+                shift += 7
+                if not (b & 0x80):
+                    break
+            out.append(v)
+        return out
+
+    # Protobuf walk: field 1 = packed cell indexes, field 2 = packed values.
+    idxs: list[int] = []
+    vals: list[int] = []
+    pos = 0
+    while pos < len(raw):
+        tag = raw[pos]
+        pos += 1
+        fld, wt = tag >> 3, tag & 7
+        if wt != 2:
+            break
+        ln = 0
+        shift = 0
+        while pos < len(raw):
+            b = raw[pos]
+            pos += 1
+            ln |= (b & 0x7F) << shift
+            shift += 7
+            if not (b & 0x80):
+                break
+        payload = raw[pos : pos + ln]
+        pos += ln
+        if fld == 1:
+            idxs = _unpack(payload)
+        elif fld == 2:
+            vals = _unpack(payload)
+    return [(idx, vals[i] if i < len(vals) else 0) for i, idx in enumerate(idxs)]
+
+
 def _parse_obstacles(field32: dict) -> list[ObstacleInfo]:
     """Parse obstacle/furniture annotations from bbp-decoded field 2.32.
 
@@ -403,9 +484,20 @@ class MapDisplayData:
     robot_y: float = 0.0  # decimeters, world coordinates
     robot_heading: float = 0.0  # degrees (converted from radians for renderer)
     timestamp: int = 0  # milliseconds since epoch (field 10)
+    # Local monotonic receive time, set by the client (for freshness compare)
+    received_at: float = 0.0
     # Dock/reference position from field 5 (same coordinate system as robot)
     dock_ref_x: float = 0.0
     dock_ref_y: float = 0.0
+    # Field 12 (fw v01.08.03): recent-path "rails" — two parallel polylines
+    # in world coords, constant 2.28-cell (11.4 cm ≈ suction inlet width)
+    # separation, trailing ~2 cells behind the robot. The strip between
+    # them is the freshly vacuumed track.
+    rail_paths: list[list[tuple[float, float]]] = field(default_factory=list)
+    # Field 7 (fw v01.08.03): incremental lidar cell observations as
+    # (cell_index, value) pairs. Index is row-major (stride = map width);
+    # value is the per-cell classification bitfield (wall / carpet / … ).
+    wall_cells: list[tuple[int, int]] = field(default_factory=list)
 
     def to_grid_coords(
         self, resolution: int, origin_x: int, origin_y: int,
@@ -477,6 +569,37 @@ class MapDisplayData:
             except (ValueError, TypeError):
                 pass
 
+        # Field 12 — recent-path rails (two parallel float32 polylines)
+        items = decoded.get("12", [])
+        if isinstance(items, dict):
+            items = [items]
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                poly = item.get("1")
+                if isinstance(poly, list):
+                    poly = poly[0] if poly else None
+                if not isinstance(poly, dict):
+                    continue
+                xs = _unpack_f32_list(poly.get("1"))
+                ys = _unpack_f32_list(poly.get("2"))
+                if xs and len(xs) == len(ys):
+                    pts = [
+                        (x, y)
+                        for x, y in zip(xs, ys, strict=True)
+                        if math.isfinite(x) and math.isfinite(y)
+                    ]
+                    if pts:
+                        result.rail_paths.append(pts)
+
+        # Field 7 — incremental lidar wall/obstacle cell observations
+        f7 = decoded.get("7")
+        if isinstance(f7, list):
+            f7 = f7[0] if f7 else None
+        if isinstance(f7, dict) and f7.get("3"):
+            result.wall_cells = _decode_wall_cells(f7.get("3"))
+
         return result
 
 
@@ -487,6 +610,50 @@ class Position:
     x: float = 0.0
     y: float = 0.0
     heading: float = 0.0
+
+
+@dataclass
+class PlannedTrajectory:
+    """Planned path polyline from status/point_navi_plan_traj broadcasts.
+
+    Sent ~every 1.1s while the robot drives. Wire format (validated live
+    2026-07-22 during a kitchen clean):
+      field 1 (repeated): {1: x_f32, 2: y_f32} — waypoints ahead of the
+        robot in the SAME world frame as display_map robot poses (the
+        first point ≈ the current robot position, grid = raw - origin).
+
+    Known anomalies (filter before rendering): during docking maneuvers
+    the robot emits frames of ~100 identical points far outside the map
+    bbox (positive Y in a Y-negative map).
+    """
+
+    points: list[tuple[float, float]] = field(default_factory=list)
+    timestamp: int = 0
+    # Local monotonic receive time, set by the client (for freshness compare)
+    received_at: float = 0.0
+
+    @classmethod
+    def from_broadcast(cls, decoded: dict[str, Any]) -> PlannedTrajectory:
+        """Parse a point_navi_plan_traj broadcast payload."""
+        import math
+
+        result = cls()
+        items = decoded.get("1", [])
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            return result
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            x = _to_float32(item.get("1"))
+            y = _to_float32(item.get("2"))
+            if (
+                x is not None and y is not None
+                and math.isfinite(x) and math.isfinite(y)
+            ):
+                result.points.append((x, y))
+        return result
 
 
 @dataclass
@@ -570,6 +737,8 @@ class NarwalState:
     # Map
     map_data: MapData | None = None
     map_display_data: MapDisplayData | None = None
+    # Planned path ahead of the robot (world coords, from point_navi_plan_traj)
+    planned_trajectory: PlannedTrajectory | None = None
 
     # Zones the robot was last told to clean (grid coords: x_min,y_min,x_max,y_max).
     # Set by start_zone, cleared by any other clean/stop command, so the camera
@@ -644,6 +813,56 @@ class NarwalState:
         return (
             self.working_status == WorkingStatus.DOCKED_V2 and not self.is_docked
         )
+
+    def best_robot_position(self) -> tuple[float, float, float | None] | None:
+        """Freshest robot pose in world coordinates, from either source.
+
+        display_map poses (~1.5s) drop out for 30s+ during cleaning on
+        fw v01.08.03+, while point_navi_plan_traj (~1.1s) keeps flowing —
+        and its FIRST point ≈ the current robot pose (validated live
+        2026-07-22). Whichever broadcast arrived most recently wins, so the
+        rendered robot/trail stay live through display_map dropouts.
+
+        Trajectory candidates are rejected when the head point falls
+        outside the map bbox (docking-maneuver anomaly frames repeat ~100
+        identical out-of-bbox points). Heading for a trajectory pose is
+        derived from its first segment, falling back to the last
+        display_map heading.
+
+        Returns (world_x, world_y, heading_degrees_or_None) or None.
+        """
+        import math
+
+        candidates: list[tuple[float, float, float, float | None]] = []
+
+        d = self.map_display_data
+        if d and not (d.robot_x == 0.0 and d.robot_y == 0.0):
+            candidates.append((d.received_at, d.robot_x, d.robot_y, d.robot_heading))
+
+        t = self.planned_trajectory
+        if t and t.points:
+            x, y = t.points[0]
+            in_bbox = True
+            m = self.map_data
+            if m and m.width > 0 and m.height > 0:
+                in_bbox = (
+                    m.origin_x <= x < m.origin_x + m.width
+                    and m.origin_y <= y < m.origin_y + m.height
+                )
+            if in_bbox:
+                heading: float | None = None
+                for nx, ny in t.points[1:]:
+                    if nx != x or ny != y:
+                        heading = math.degrees(math.atan2(ny - y, nx - x))
+                        break
+                if heading is None and d is not None:
+                    heading = d.robot_heading
+                candidates.append((t.received_at, x, y, heading))
+
+        if not candidates:
+            return None
+        best = max(candidates, key=lambda c: c[0])
+        return (best[1], best[2], best[3])
 
     @property
     def is_docked(self) -> bool:

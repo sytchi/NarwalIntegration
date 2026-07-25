@@ -1,10 +1,13 @@
 clean_zone:
   name: Clean zone
   description: >-
-    Clean one or more rectangular zones drawn on the map. Coordinates are in
-    map-image pixels (from the xiaomi-vacuum-map-card [[selection]] with
-    identity calibration); they are converted to the robot's map coordinates
-    using the active map's origin. The robot must be docked.
+    Clean one or more rectangular zones drawn on the map. The 'coordinates'
+    field selects how the values are interpreted — by default they are
+    map-image pixels of the 1:1 camera (the pre-1.6 contract). Set
+    coordinates to 'world' for robot world/map-frame values (what the
+    xiaomi-vacuum-map-card sends as [[selection]] with calibration_source
+    camera, using the Map HD camera's calibration_points attribute).
+    Corner order does not matter. The robot must be docked.
   target:
     entity:
       integration: narwal
@@ -13,41 +16,54 @@ clean_zone:
     zone:
       name: Zone(s)
       description: >-
-        List of rectangles, each [x1, y1, x2, y2] in map-image pixels. This is
-        the xiaomi-vacuum-map-card [[selection]] value.
+        List of rectangles, each [x1, y1, x2, y2] — interpreted per the
+        'coordinates' field (map-image pixels by default, or robot world
+        values, e.g. the xiaomi-vacuum-map-card [[selection]]).
       required: false
       example: "[[26, 24, 76, 76]]"
       selector: {object: {}}
     x1:
       name: X1
-      description: Single-rectangle first corner X (pixels). Use when 'zone' is omitted.
+      description: Single-rectangle first corner X (see 'coordinates'). Use when 'zone' is omitted.
       required: false
       example: 26
-      selector: {number: {min: 0, max: 4000, mode: box}}
+      selector: {number: {min: -4000, max: 4000, mode: box}}
     y1:
       name: Y1
-      description: Single-rectangle first corner Y (pixels).
+      description: Single-rectangle first corner Y (see 'coordinates').
       required: false
       example: 24
-      selector: {number: {min: 0, max: 4000, mode: box}}
+      selector: {number: {min: -4000, max: 4000, mode: box}}
     x2:
       name: X2
-      description: Single-rectangle opposite corner X (pixels).
+      description: Single-rectangle opposite corner X (see 'coordinates').
       required: false
       example: 76
-      selector: {number: {min: 0, max: 4000, mode: box}}
+      selector: {number: {min: -4000, max: 4000, mode: box}}
     y2:
       name: Y2
-      description: Single-rectangle opposite corner Y (pixels).
+      description: Single-rectangle opposite corner Y (see 'coordinates').
       required: false
       example: 76
-      selector: {number: {min: 0, max: 4000, mode: box}}
+      selector: {number: {min: -4000, max: 4000, mode: box}}
     fan_speed:
       name: Fan speed
       description: Optional suction level.
       required: false
       example: normal
       selector: {select: {options: [quiet, normal, strong, max]}}
+    coordinates:
+      name: Coordinate system
+      description: >-
+        How to interpret the rectangle values. "pixels" (default) = map-image
+        pixels of the 1:1 camera — the pre-1.6 contract, kept for backwards
+        compatibility; "world" = robot world/map frame (the new mode, what the
+        map card sends with camera calibration); "auto" = detect from the
+        values. 2.0.0 will drop the pixel contract and default to world.
+      required: false
+      default: pixels
+      example: world
+      selector: {select: {options: [auto, world, pixels]}}
 
 clean_rooms:
   name: Clean rooms

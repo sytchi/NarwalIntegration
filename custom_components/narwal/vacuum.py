@@ -48,7 +48,9 @@ async def async_setup_entry(
     async_add_entities([NarwalVacuum(coordinator)])
 
     # Custom service: clean a drawn rectangular zone (no built-in vacuum
-    # service covers this). Coordinates arrive in map-image pixels.
+    # service covers this). The 'coordinates' field selects the contract
+    # (map-image pixels by default; 'world' = the card's [[selection]] with
+    # camera calibration).
     # Imported here (not at module top) so the module still imports under the
     # lightweight test stubs that lack these HA helpers.
     import voluptuous as vol
@@ -56,21 +58,24 @@ async def async_setup_entry(
     from homeassistant.helpers import entity_platform
 
     platform = entity_platform.async_get_current_platform()
-    # `zone` is the xiaomi-vacuum-map-card [[selection]] format: a list of
-    # rectangles, each [x1, y1, x2, y2] in map-image pixels. Individual
-    # x1..y2 are also accepted for manual/script calls (wrapped into one rect).
+    # `zone` is a list of rectangles [x1, y1, x2, y2] (floats accepted and
+    # rounded), interpreted per the `coordinates` field. Individual x1..y2
+    # are also accepted for manual/script calls (wrapped into one rect).
     platform.async_register_entity_service(
         "clean_zone",
         {
             vol.Optional("zone"): vol.All(
                 cv.ensure_list,
-                [vol.All([vol.Coerce(int)], vol.Length(min=4))],
+                [vol.All([vol.Coerce(float)], vol.Length(min=4))],
             ),
-            vol.Optional("x1"): vol.Coerce(int),
-            vol.Optional("y1"): vol.Coerce(int),
-            vol.Optional("x2"): vol.Coerce(int),
-            vol.Optional("y2"): vol.Coerce(int),
+            vol.Optional("x1"): vol.Coerce(float),
+            vol.Optional("y1"): vol.Coerce(float),
+            vol.Optional("x2"): vol.Coerce(float),
+            vol.Optional("y2"): vol.Coerce(float),
             vol.Optional("fan_speed"): cv.string,
+            vol.Optional("coordinates", default="pixels"): vol.In(
+                ["auto", "world", "pixels"]
+            ),
         },
         "async_clean_zone",
     )
@@ -367,58 +372,119 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         zone: list[list[int]] | None = None,
         x1: int | None = None, y1: int | None = None,
         x2: int | None = None, y2: int | None = None,
-        fan_speed: str | None = None, **kwargs: Any,
+        fan_speed: str | None = None,
+        coordinates: str = "pixels", **kwargs: Any,
     ) -> None:
         """Clean one or more rectangular zones drawn on the map.
 
         `zone` is the xiaomi-vacuum-map-card [[selection]] format: a list of
-        rectangles, each [x1, y1, x2, y2] in map-image pixels. If `zone` is
-        omitted, x1..y2 form a single rectangle.
+        rectangles, each [x1, y1, x2, y2] in ROBOT WORLD (map-frame)
+        coordinates — what the card sends with
+        ``calibration_source: {camera: true}`` using the HD camera's
+        ``calibration_points`` attribute (grid coordinate = world - origin).
+        If `zone` is omitted, x1..y2 form a single rectangle. Corner order
+        does not matter (start_zone normalizes min/max).
 
-        The map camera renders the grid 1:1 to pixels with Y flipped, so a
-        pixel maps to robot world coordinates as:
-            world_x = px + origin_x
-            world_y = (height - 1 + origin_y) - py
-        (origin/height from the active MapData). The robot must be docked;
-        start_zone retries briefly over the dock-settling transition.
+        `coordinates` selects the contract: "pixels" (the DEFAULT — the
+        pre-1.6 behavior: map-image pixels of the 1:1 camera, converted
+        with the origin/Y-flip transform, so existing configs keep working
+        unchanged), "world" (the new mode — values pass straight through),
+        or "auto" (detect from the values: negative → world, above the
+        world range (size - 1 + origin) → pixels; ambiguous → world —
+        unreliable on maps whose origin is close to (0, 0)).
+
+        Safety: negative values are impossible as pixels, so a rectangle
+        containing one is treated as world (with a warning) even in
+        pixels mode.
+
+        Deprecation: 2.0.0 will drop the pixel contract and default to
+        world; the parameter will be accepted but ignored.
+
+        The robot must be docked; start_zone retries briefly over the
+        dock-settling transition.
         """
-        rects_px: list[tuple[int, int, int, int]] = []
+        zones_world: list[tuple[int, int, int, int]] = []
         if zone:
             for r in zone:
-                rects_px.append((int(r[0]), int(r[1]), int(r[2]), int(r[3])))
+                zones_world.append((
+                    round(float(r[0])), round(float(r[1])),
+                    round(float(r[2])), round(float(r[3])),
+                ))
         elif None not in (x1, y1, x2, y2):
-            rects_px.append((int(x1), int(y1), int(x2), int(y2)))
-        if not rects_px:
+            zones_world.append((
+                round(float(x1)), round(float(y1)),
+                round(float(x2)), round(float(y2)),
+            ))
+        if not zones_world:
             _LOGGER.warning("clean_zone: no rectangle given (zone or x1..y2)")
             return
 
+        # Coordinate-contract handling (see docstring): explicit
+        # "world"/"pixels" bypass detection; "auto" detects legacy pixel
+        # rects by range. Only rects with no negative values can be
+        # pixels, and both deciding and converting need the map.
+        all_non_negative = all(v >= 0 for r in zones_world for v in r)
+        if coordinates == "pixels" and not all_non_negative:
+            _LOGGER.warning(
+                "clean_zone: negative values are impossible as pixels — "
+                "treating %s as world coordinates",
+                zones_world,
+            )
+            coordinates = "world"
+        needs_map = coordinates == "pixels" or (
+            coordinates == "auto" and all_non_negative
+        )
+        if needs_map:
+            map_data = None
+            state = self.coordinator.data
+            if state is not None:
+                map_data = state.map_data
+            if map_data is None or not getattr(map_data, "height", 0):
+                try:
+                    map_data = await self.coordinator.client.get_map()
+                except Exception:
+                    map_data = None
+            if map_data is None or not getattr(map_data, "height", 0):
+                if coordinates == "pixels":
+                    _LOGGER.warning(
+                        "clean_zone: coordinates=pixels but no map is "
+                        "available to convert them — aborting",
+                    )
+                    return
+            else:
+                h = int(map_data.height)
+                ox, oy = int(map_data.origin_x), int(map_data.origin_y)
+                wx_max = int(map_data.width) - 1 + ox
+                wy_max = h - 1 + oy
+                is_pixels = coordinates == "pixels" or any(
+                    x > wx_max or y > wy_max
+                    for (rx1, ry1, rx2, ry2) in zones_world
+                    for x, y in ((rx1, ry1), (rx2, ry2))
+                )
+                if is_pixels:
+                    converted = [
+                        (rx1 + ox, (h - 1 + oy) - ry2,
+                         rx2 + ox, (h - 1 + oy) - ry1)
+                        for (rx1, ry1, rx2, ry2) in zones_world
+                    ]
+                    if coordinates == "auto":
+                        _LOGGER.warning(
+                            "clean_zone: legacy map-image pixel coordinates "
+                            "detected (%s) — converted to world %s. Set "
+                            "coordinates: world/pixels explicitly or migrate "
+                            "to camera calibration on the map card.",
+                            zones_world, converted,
+                        )
+                    zones_world = converted
+
         await self._ensure_awake()
-        state = self.coordinator.data
-        map_data = state.map_data if state else None
-        if map_data is None or not map_data.map_id:
-            map_data = await self.coordinator.client.get_map()
-        if map_data is None or not getattr(map_data, "height", 0):
-            _LOGGER.warning("clean_zone: no map available; cannot convert pixels")
-            return
-
-        h = int(map_data.height)
-        ox, oy = int(map_data.origin_x), int(map_data.origin_y)
-
-        def to_world(px: int, py: int) -> tuple[int, int]:
-            return (px + ox, (h - 1 + oy) - py)
-
-        zones_world = [
-            (*to_world(rx1, ry1), *to_world(rx2, ry2))
-            for (rx1, ry1, rx2, ry2) in rects_px
-        ]
 
         kw: dict[str, Any] = {"clean_mode": self._clean_mode}
         if fan_speed and fan_speed in FAN_SPEED_MAP:
             kw["fan"] = int(FAN_SPEED_MAP[fan_speed])
         _LOGGER.info(
-            "clean_zone: pixels %s -> world %s (map %dx%d, origin %d,%d), mode=%s",
-            rects_px, zones_world, int(map_data.width), h, ox, oy,
-            self._clean_mode.name,
+            "clean_zone: world zones %s, mode=%s",
+            zones_world, self._clean_mode.name,
         )
         resp = await self.coordinator.client.start_zone(zones_world, **kw)
         try:
