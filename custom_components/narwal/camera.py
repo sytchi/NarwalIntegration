@@ -64,7 +64,9 @@ class NarwalMapCamera(NarwalEntity, Camera):
     _attr_is_streaming = True
     # These change on every render (~2s while watched); keep them out of the
     # recorder so we don't write a history row + JSON blob to disk each time.
-    _unrecorded_attributes = frozenset({"render_count", "calibration_points"})
+    _unrecorded_attributes = frozenset(
+        {"render_count", "calibration_points", "rooms"}
+    )
 
     def __init__(
         self, coordinator: NarwalCoordinator, scale: int = 4,
@@ -90,6 +92,10 @@ class NarwalMapCamera(NarwalEntity, Camera):
         self._base_wall_mask = None  # set of (cx,cy) walls in the saved map
         self._base_map_ts: int = 0  # created_at of the static map used for base
         self._base_map_furniture: bool = True  # furniture flag used for base
+        # Cached `rooms` attribute (per saved map) for the map card's
+        # "Generate rooms config" editor button
+        self._rooms_attr: dict | None = None
+        self._rooms_attr_ts: int = -1
         # Debug view state — growing viewport around the session trail
         self._dock_pos: tuple[float, float] | None = None
         self._vp_min_x: float = 0.0
@@ -153,7 +159,48 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 static_map.origin_y,
                 self._scale,
             )
+            attrs["rooms"] = self._get_rooms_attribute(static_map)
         return attrs
+
+    def _get_rooms_attribute(self, static_map) -> dict:
+        """Per-room outlines in world coordinates, cached per saved map.
+
+        Format matches what xiaomi-vacuum-map-card's "Generate rooms
+        config" editor button reads from the ``map_source`` camera's
+        ``rooms`` attribute: ``{id: {name, outline, x, y}}``. With
+        ``calibration_source: {camera: true}`` the generated
+        predefined_selections are world coordinates and feed
+        ``narwal.clean_rooms`` / ``narwal.clean_zone`` directly.
+        """
+        static_ts = static_map.created_at or 0
+        if self._rooms_attr is not None and static_ts == self._rooms_attr_ts:
+            return self._rooms_attr
+        from .narwal_client.map_renderer import compute_room_outlines
+
+        try:
+            rooms = compute_room_outlines(
+                static_map.compressed_map,
+                static_map.width,
+                static_map.height,
+                static_map.origin_x,
+                static_map.origin_y,
+            )
+        except Exception:
+            _LOGGER.exception("Failed to compute room outlines")
+            rooms = {}
+        names = {
+            str(r.room_id): r.display_name for r in (static_map.rooms or [])
+        }
+        if names:
+            # Keep only rooms the robot itself lists (drops special
+            # markers/junk segments present in the grid)
+            rooms = {rid: room for rid, room in rooms.items() if rid in names}
+        for rid, room in rooms.items():
+            if rid in names:
+                room["name"] = names[rid]
+        self._rooms_attr = rooms
+        self._rooms_attr_ts = static_ts
+        return rooms
 
     def _record_debug_viewport(self, x: float, y: float) -> None:
         """Track dock position and expand the debug viewport bounds."""

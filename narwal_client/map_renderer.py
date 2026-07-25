@@ -1135,6 +1135,120 @@ def render_overlay(
     return buf.getvalue()
 
 
+def compute_room_outlines(
+    compressed: bytes,
+    width: int,
+    height: int,
+    origin_x: int = 0,
+    origin_y: int = 0,
+) -> dict[str, dict]:
+    """Compute per-room outline polygons in robot WORLD coordinates.
+
+    Walks the map grid's room segments and traces each room's outer
+    boundary along cell edges (vertices on integer grid corners, collinear
+    runs collapsed). The result matches the format expected by
+    xiaomi-vacuum-map-card's "Generate rooms config" editor button, which
+    reads the ``rooms`` attribute of the ``map_source`` camera:
+    ``{room_id: {outline: [[x, y], ...], name, x, y}}`` — with camera
+    calibration these are vacuum/world coordinates directly.
+
+    Returns a dict keyed by str(room_id); rooms without cells are omitted.
+    Room names are NOT included here (the caller adds them from RoomInfo).
+    """
+    decompressed = decompress_map(compressed)
+    if not decompressed or width <= 0 or height <= 0:
+        return {}
+    pixels = _decode_packed_varints(decompressed)
+
+    cells_by_room: dict[int, set[tuple[int, int]]] = {}
+    for i, val in enumerate(pixels[: width * height]):
+        if val in (0, 0x20, 0x28):
+            continue
+        rid = val >> 8
+        # Sanity: real room ids are small (1..~22); huge ids are special
+        # markers/corruption in the grid (seen live: 1048580)
+        if rid <= 0 or rid > 63:
+            continue
+        cells_by_room.setdefault(rid, set()).add((i % width, i // width))
+
+    result: dict[str, dict] = {}
+    for rid, cells in cells_by_room.items():
+        # Skip noise fragments — a real room is at least ~0.25 m²
+        if len(cells) < 8:
+            continue
+        outline = _trace_cell_outline(cells)
+        if len(outline) < 3:
+            continue
+        cx = sum(x for x, _y in cells) / len(cells) + 0.5
+        cy = sum(y for _x, y in cells) / len(cells) + 0.5
+        result[str(rid)] = {
+            "outline": [
+                [gx + origin_x, gy + origin_y] for gx, gy in outline
+            ],
+            "x": round(cx + origin_x),
+            "y": round(cy + origin_y),
+        }
+    return result
+
+
+def _trace_cell_outline(cells: set) -> list:
+    """Trace the outer boundary of a set of grid cells along cell edges.
+
+    Cell (x, y) occupies the unit square [x, x+1) x [y, y+1). Boundary
+    edges are collected with a region-on-the-left orientation and chained
+    into closed loops; the longest loop (the outer boundary) is returned
+    with collinear vertices collapsed.
+    """
+    if not cells:
+        return []
+    # Directed boundary edges (counter-clockwise around the region)
+    edges: dict = {}
+    for x, y in cells:
+        if (x, y - 1) not in cells:
+            edges.setdefault((x, y), []).append((x + 1, y))
+        if (x + 1, y) not in cells:
+            edges.setdefault((x + 1, y), []).append((x + 1, y + 1))
+        if (x, y + 1) not in cells:
+            edges.setdefault((x + 1, y + 1), []).append((x, y + 1))
+        if (x - 1, y) not in cells:
+            edges.setdefault((x, y + 1), []).append((x, y))
+
+    best_loop: list = []
+    while edges:
+        start = next(iter(edges))
+        loop = [start]
+        cur = start
+        while True:
+            outs = edges.get(cur)
+            if not outs:
+                break
+            nxt = outs.pop()
+            if not outs:
+                del edges[cur]
+            if nxt == start:
+                break
+            loop.append(nxt)
+            cur = nxt
+        if len(loop) > len(best_loop):
+            best_loop = loop
+
+    if len(best_loop) < 3:
+        return []
+    # Collapse collinear runs (axis-aligned edges: keep direction changes)
+    simplified: list = []
+    n = len(best_loop)
+    for i in range(n):
+        prev_pt = best_loop[i - 1]
+        pt = best_loop[i]
+        nxt_pt = best_loop[(i + 1) % n]
+        d1 = (pt[0] - prev_pt[0], pt[1] - prev_pt[1])
+        d2 = (nxt_pt[0] - pt[0], nxt_pt[1] - pt[1])
+        # keep the point when the direction changes
+        if d1[0] * d2[1] != d1[1] * d2[0]:
+            simplified.append(list(pt))
+    return simplified if len(simplified) >= 3 else [list(p) for p in best_loop]
+
+
 def compute_calibration_points(
     width: int,
     height: int,

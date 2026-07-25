@@ -33,7 +33,7 @@ This is an actively maintained continuation of [sjmotew/NarwalIntegration](https
 [![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sytchi&repository=NarwalIntegration&category=integration)
 
 <p align="center">
-  <img src="docs/images/map-clean.png" alt="Color-coded floor plan with per-room segments and dock marker" width="340">
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-clean.png" alt="Color-coded floor plan with per-room segments and dock marker" width="340">
 </p>
 
 ## Device Compatibility
@@ -108,9 +108,9 @@ Layers drawn on the map (each toggleable with a switch entity):
   the planned-trajectory head during display_map dropouts)
 
 <p align="center">
-  <img src="docs/images/map-hd-idle.png" alt="Idle HD floor plan" width="240">
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-idle.png" alt="Idle HD floor plan" width="240">
   &nbsp;&nbsp;
-  <img src="docs/images/map-hd-cleaning.png" alt="Live HD map during cleaning showing the trail, vacuumed strip, planned path and lidar walls" width="240">
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-cleaning.png" alt="Live HD map during cleaning showing the trail, vacuumed strip, planned path and lidar walls" width="240">
 </p>
 <p align="center"><sub>Left: idle floor plan. Right: live map during cleaning — trail, vacuumed strip, planned path and lidar wall marks.</sub></p>
 
@@ -251,7 +251,10 @@ For an interactive map we recommend Piotr Machowski's
 [`xiaomi-vacuum-map-card`](https://github.com/PiotrMachowski/lovelace-xiaomi-vacuum-map-card)
 (available in HACS). The HD camera exposes the **`calibration_points`**
 attribute the card needs; selections arrive in robot world coordinates and feed
-`narwal.clean_zone` / `narwal.clean_rooms` directly:
+`narwal.clean_zone` / `narwal.clean_rooms` directly. It also exposes a
+**`rooms`** attribute, so the card's **"Generate rooms config"** button builds
+the whole Rooms mode for you in one click (see
+[Generating the Rooms mode automatically](#generating-the-rooms-mode-automatically)):
 
 ```yaml
 type: custom:xiaomi-vacuum-map-card
@@ -290,6 +293,24 @@ Notes:
   `map_scale` you configure — no re-calibration needed.
 - The map layer switches (`switch.*_draw_*`) pair nicely with the card view —
   add them as tiles under the map to declutter it on demand.
+
+### Generating the Rooms mode automatically
+
+The HD camera exposes a **`rooms`** attribute — per-room outline polygons in
+world coordinates, computed live from the robot's map (survives remaps). This
+is exactly the format the card's **"Generate rooms config"** button expects:
+
+1. Open the card in the dashboard editor (visual editor).
+2. Make sure `map_source.camera` points at `camera.*_map_hd`.
+3. Click **Generate rooms config** — the card fills `predefined_selections`
+   for the (last) ROOM-type map mode with every room's outline, name and
+   label anchor. Pair it with a `service_call_schema` calling
+   `narwal.clean_rooms` with `rooms: "[[selection]]"`.
+
+> ⚠️ The button **replaces** the `predefined_selections` of your ROOM mode.
+> If you have hand-tuned room outlines, icons or labels, don't click it (or
+> back up your card YAML first).
+
 
 ## Requirements
 

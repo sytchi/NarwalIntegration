@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-26
+
+### Added
+- **`rooms` attribute on the HD map camera** — per-room outline polygons in
+  robot world coordinates (traced from the map's segment grid, collinear
+  points collapsed) with room names and label anchors, recomputed when the
+  saved map changes. This is the format `xiaomi-vacuum-map-card`'s
+  **"Generate rooms config"** editor button consumes, so a full Rooms map
+  mode can be generated with one click — on any map, without manual outline
+  drawing. Note: the card's button replaces the existing
+  `predefined_selections` of the ROOM mode.
+
 ## [2.0.0] - 2026-07-25
 
 > ### ⚠️ BREAKING CHANGES — the map changed
@@ -231,6 +243,8 @@ Upstream baseline: [sjmotew/NarwalIntegration](https://github.com/sjmotew/Narwal
 — local WebSocket vacuum control, sensors, live map camera with room labels,
 room cleaning, config flow.
 
+[2.1.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v2.1.0
+[2.0.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v2.0.0
 [1.6.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.6.0
 [1.5.1]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.5.1
 [1.5.0]: https://github.com/sytchi/NarwalIntegration/releases/tag/v1.5.0
