@@ -7,15 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.1.0] - 2026-07-26
 
+> ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
+
 ### Added
-- **`rooms` attribute on the HD map camera** — per-room outline polygons in
-  robot world coordinates (traced from the map's segment grid, collinear
-  points collapsed) with room names and label anchors, recomputed when the
-  saved map changes. This is the format `xiaomi-vacuum-map-card`'s
-  **"Generate rooms config"** editor button consumes, so a full Rooms map
-  mode can be generated with one click — on any map, without manual outline
-  drawing. Note: the card's button replaces the existing
-  `predefined_selections` of the ROOM mode.
+- `rooms` attribute on `camera.*_map_hd` — per-room outlines (world coords),
+  names and label anchors.
+- One-click Rooms mode via `xiaomi-vacuum-map-card`'s "Generate rooms config"
+  button (reads that `rooms` attribute; replaces the ROOM mode's
+  `predefined_selections`).
+- README images use absolute URLs (render on the HACS info page).
 
 ## [2.0.0] - 2026-07-25
 
