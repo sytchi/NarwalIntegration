@@ -108,11 +108,13 @@ Layers drawn on the map (each toggleable with a switch entity):
   the planned-trajectory head during display_map dropouts)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-idle.png" alt="Idle HD floor plan" width="240">
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-cleaning.png" alt="Live HD map during cleaning showing the trail, vacuumed strip, planned path and lidar walls" width="240">
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-idle.png" alt="Idle HD floor plan" width="220">
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-cleaning.png" alt="Live HD map during cleaning showing the trail, vacuumed strip, planned path and lidar walls" width="220">
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-full-session.png" alt="HD map late into a whole-house clean, with trail, vacuumed strips and lidar marks accumulated over the session" width="220">
 </p>
-<p align="center"><sub>Left: idle floor plan. Right: live map during cleaning — trail, vacuumed strip, planned path and lidar wall marks.</sub></p>
+<p align="center"><sub>Left: idle floor plan. Middle: early in a clean — trail, vacuumed strip, planned path and lidar wall marks. Right: the same map late into a whole-house run, with every layer accumulated.</sub></p>
 
 The map layers accumulate during a clean but are drawn **incrementally** so
 per-frame render cost stays flat regardless of session length — see
@@ -227,6 +229,15 @@ data:
 > zones are always world coordinates now. The old `coordinates` field is still
 > accepted so pre-2.0 automations don't error, but it is ignored. See
 > [Breaking changes in 2.0](#-breaking-changes-in-20).
+
+While the job runs, the requested rectangles are drawn on the HD map as an
+amber overlay, so you can see on the dashboard exactly what the robot was told
+to clean:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sytchi/NarwalIntegration/master/docs/images/map-hd-zones.png" alt="HD map during a zone clean: four amber rectangles mark the requested zones, with the robot trail and freshly vacuumed strips inside them" width="300">
+</p>
+<p align="center"><sub>A four-rectangle zone clean of a hallway in progress — amber outlines are the zones sent to the robot, the blue trail and light strips show what it has covered so far. The zones came from the map card's predefined selections, so one tap sends the whole set.</sub></p>
 
 ### `narwal.resume`
 
