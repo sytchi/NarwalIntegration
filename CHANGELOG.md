@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Rejected start commands now raise an error instead of only logging one, so a
+  map-card tap or an automation step no longer looks successful while the robot
+  stays put. Applies to `vacuum.start`, `narwal.clean_rooms` and
+  `narwal.clean_zone`; `narwal.resume` stays log-only (it is sent blind).
+- Rejection reasons are now spelled out. New result code **4 (`NOT_READY`)**:
+  the robot declines to start until it has charged — seen after a long clean
+  (rejected at 23-26% battery, accepted at 30%; mop drying does not block a
+  start). The message includes the current battery level.
+
 ## [2.1.0] - 2026-07-26
 
 > ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.

@@ -69,6 +69,7 @@ def install() -> None:
     # homeassistant.exceptions
     ha_exc = _mod("homeassistant.exceptions", ha)
     ha_exc.ConfigEntryNotReady = type("ConfigEntryNotReady", (Exception,), {})  # type: ignore[attr-defined]
+    ha_exc.HomeAssistantError = type("HomeAssistantError", (Exception,), {})  # type: ignore[attr-defined]
 
     # homeassistant.config_entries
     ha_ce = _mod("homeassistant.config_entries", ha)

@@ -16,6 +16,7 @@ try:
 except ImportError:
     Segment = None  # HA < 2026.3 — room cleaning unavailable
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import NarwalConfigEntry
@@ -25,6 +26,34 @@ from .entity import NarwalEntity
 from .narwal_client import CleanMode, CommandResult, WorkingStatus
 
 _LOGGER = logging.getLogger(__name__)
+
+# Why the robot rejected a command, in plain language. Used both in the log
+# and in the error surfaced to whoever called the service.
+COMMAND_RESULT_HINTS: dict[int, str] = {
+    CommandResult.NOT_APPLICABLE: (
+        "the robot cannot run this command in its current state"
+    ),
+    CommandResult.CONFLICT: (
+        "the robot is busy (cleaning, returning, or running a dock cycle)"
+    ),
+    CommandResult.NOT_READY: (
+        "the robot declined to start — let it charge first. Rejections were "
+        "observed below ~30% battery; a running mop-drying cycle does not "
+        "block a start"
+    ),
+}
+
+
+def describe_command_result(resp: Any) -> str:
+    """Return '<NAME> (code=<n>): <hint>' for a command response."""
+    code = resp.result_code
+    try:
+        name = CommandResult(code).name
+    except ValueError:
+        name = f"UNKNOWN({code})"
+    hint = COMMAND_RESULT_HINTS.get(code)
+    return f"{name} (code={code})" + (f": {hint}" if hint else "")
+
 
 WORKING_STATUS_TO_ACTIVITY: dict[WorkingStatus, VacuumActivity] = {
     WorkingStatus.DOCKED: VacuumActivity.DOCKED,
@@ -185,6 +214,22 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """Clean mode selected via the clean-mode select entity."""
         return CLEAN_MODE_MAP.get(self.coordinator.clean_mode, CleanMode.SWEEP_MOP)
 
+    def _command_error(self, action: str, resp: Any) -> HomeAssistantError:
+        """Build the error raised when the robot rejects a command.
+
+        Failed start commands used to be logged and swallowed, so a tap on a
+        map card or an automation step looked successful while the robot never
+        moved. Raising surfaces the reason in the UI and fails the automation
+        step instead. `narwal.resume` is deliberately exempt: it is meant to be
+        sent blind and the robot rejects it whenever there is nothing to resume.
+        """
+        detail = describe_command_result(resp)
+        if resp.result_code == CommandResult.NOT_READY:
+            state = self.coordinator.data
+            if state is not None and state.battery_level:
+                detail += f" (battery is at {state.battery_level}%)"
+        return HomeAssistantError(f"{action} failed: {detail}")
+
     async def _ensure_awake(self) -> None:
         """Wake the robot if it is not broadcasting.
 
@@ -227,9 +272,9 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         )
         if not resp.success:
             _LOGGER.warning(
-                "Start command did not succeed (code=%s) — robot may not have started",
-                resp.result_code,
+                "Start command did not succeed: %s", describe_command_result(resp),
             )
+            raise self._command_error("Start", resp)
 
     async def async_stop(self, **kwargs) -> None:
         """Stop cleaning."""
@@ -326,10 +371,12 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
             "Resume response: code=%s, success=%s", resp.result_code, resp.success,
         )
         if not resp.success:
+            # Sent blind by design (see async_resume_task) — a rejection is a
+            # normal "nothing to resume", so this one only logs.
             _LOGGER.warning(
-                "Resume command did not succeed (code=%s) — "
+                "Resume command did not succeed: %s — "
                 "the robot may have no paused task to resume",
-                resp.result_code,
+                describe_command_result(resp),
             )
 
     async def _clean_rooms_with_mode(self, room_ids: list[int]) -> None:
@@ -351,22 +398,11 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
                 room_ids,
             )
             resp = await client.start_rooms(room_ids, clean_mode=mode)
-        try:
-            result_name = CommandResult(resp.result_code).name
-        except ValueError:
-            result_name = f"UNKNOWN({resp.result_code})"
-        _LOGGER.info(
-            "Room clean response: %s (code=%s), rooms=%s",
-            result_name, resp.result_code, room_ids,
-        )
+        detail = describe_command_result(resp)
+        _LOGGER.info("Room clean response: %s, rooms=%s", detail, room_ids)
         if not resp.success:
-            _LOGGER.warning(
-                "Room clean failed: %s (code=%s), rooms=%s. "
-                "CONFLICT means robot is busy (cleaning, returning, or docked cycle in progress). "
-                "NOT_APPLICABLE means robot cannot clean right now. "
-                "Try again after the robot is idle on the dock.",
-                result_name, resp.result_code, room_ids,
-            )
+            _LOGGER.warning("Room clean failed: %s, rooms=%s", detail, room_ids)
+            raise self._command_error("Room clean", resp)
 
     async def async_clean_zone(
         self,
@@ -420,18 +456,11 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
             zones_world, self._clean_mode.name,
         )
         resp = await self.coordinator.client.start_zone(zones_world, **kw)
-        try:
-            result_name = CommandResult(resp.result_code).name
-        except ValueError:
-            result_name = f"UNKNOWN({resp.result_code})"
-        _LOGGER.info("clean_zone response: %s (code=%s), zones=%s",
-                     result_name, resp.result_code, zones_world)
+        detail = describe_command_result(resp)
+        _LOGGER.info("clean_zone response: %s, zones=%s", detail, zones_world)
         if not resp.success:
-            _LOGGER.warning(
-                "clean_zone failed: %s (code=%s). start_clean needs the robot "
-                "docked; try again once it is idle on the dock.",
-                result_name, resp.result_code,
-            )
+            _LOGGER.warning("clean_zone failed: %s, zones=%s", detail, zones_world)
+            raise self._command_error("Zone clean", resp)
 
     @callback
     def _handle_coordinator_update(self) -> None:

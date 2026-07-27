@@ -141,6 +141,11 @@ class CommandResult(IntEnum):
     SUCCESS = 1
     NOT_APPLICABLE = 2  # e.g., set_fan_level when not cleaning
     CONFLICT = 3  # e.g., recall when already recalling
+    # Robot declines to start a job it could otherwise run. Observed on
+    # fw v01.08.03 for clean/start_clean right after a long clean: rejected
+    # at 23-26% battery, accepted at 30% with nothing else changed. The
+    # station's mop-drying cycle ran throughout and did not block the start.
+    NOT_READY = 4
 
 
 class WorkingStatus(IntEnum):

@@ -350,6 +350,7 @@ is exactly the format the card's **"Generate rooms config"** button expects:
 | Map not showing | Map loads after robot wakes. A new clean refreshes a stale map. |
 | Commands not responding | Close the Narwal app — only one WebSocket connection at a time. |
 | Robot paused mid-clean with "robot lifted" error | Call `narwal.resume` (see [Services](#services)). |
+| Start / zone / room clean fails with `NOT_READY (code=4)` | The robot declines to start until it has charged — seen right after a long clean (rejected at 23-26% battery, accepted at 30%). Let it charge; a running mop-drying cycle is *not* what blocks the start. |
 | Z10 Ultra disconnects | Re-add the integration with the correct model selected. |
 
 ## Reporting Issues
