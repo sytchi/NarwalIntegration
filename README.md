@@ -6,6 +6,8 @@
 [![Validate](https://github.com/sytchi/NarwalIntegration/actions/workflows/validate.yml/badge.svg)](https://github.com/sytchi/NarwalIntegration/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+📖 **[Project page and screenshots](https://sytchi.github.io/NarwalIntegration/)**
+
 A fully **local, cloud-independent** [Home Assistant](https://www.home-assistant.io/) custom integration for Narwal robot vacuums. Communicates directly with your vacuum over your local network via WebSocket — no cloud account or internet connection required.
 
 This is an actively maintained continuation of [sjmotew/NarwalIntegration](https://github.com/sjmotew/NarwalIntegration), adding clean modes, zone cleaning, per-room cleaning, station controls, extra sensors, readable error states and a number of firmware-compatibility fixes. See [What this fork adds](#what-this-fork-adds) and the [CHANGELOG](CHANGELOG.md).
