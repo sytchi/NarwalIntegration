@@ -5,7 +5,9 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.1] - 2026-07-27
+
+> ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
 
 ### Changed
 - Rejected start commands now raise an error instead of only logging one, so a
@@ -16,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the robot declines to start until it has charged — seen after a long clean
   (rejected at 23-26% battery, accepted at 30%; mop drying does not block a
   start). The message includes the current battery level.
+
+### Added
+- Map gallery screenshots: a full-session HD map and a live zone clean with the
+  amber active-zone overlay.
 
 ## [2.1.0] - 2026-07-26
 
