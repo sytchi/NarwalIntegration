@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Narwal Home Assistant Integration - local control, HD map, zone cleaning</title>
+<meta name="description" content="Open-source Home Assistant integration for Narwal robot vacuums. Fully local over WebSocket on port 9002, no Narwal cloud account: clean modes, zone and per-room cleaning, live HD map and station controls. Installs through HACS.">
+<link rel="canonical" href="https://sytchi.github.io/NarwalIntegration/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Narwal Home Assistant Integration">
+<meta property="og:description" content="Fully local Home Assistant integration for Narwal robot vacuums: clean modes, zone and per-room cleaning, live HD map, station controls. No cloud account needed. Installs through HACS.">
+<meta property="og:url" content="https://sytchi.github.io/NarwalIntegration/">
+<meta property="og:image" content="https://sytchi.github.io/NarwalIntegration/images/map-hd-cleaning.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Narwal Home Assistant Integration",
+  "alternateName": "NarwalIntegration",
+  "applicationCategory": "BrowserApplication",
+  "operatingSystem": "Home Assistant 2025.1.0 or newer",
+  "description": "Fully local Home Assistant custom integration for Narwal robot vacuums, communicating over a local WebSocket connection with no cloud account.",
+  "url": "https://sytchi.github.io/NarwalIntegration/",
+  "codeRepository": "https://github.com/sytchi/NarwalIntegration",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1c1e21; --muted: #5b6570; --line: #e3e7eb;
+    --card: #f7f9fb; --accent: #03a9f4; --accent-fg: #ffffff; --code: #eef2f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --fg: #e8eaed; --muted: #9aa4af; --line: #2a2f35;
+      --card: #1b1f24; --accent: #03a9f4; --accent-fg: #06202b; --code: #22272e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+  header { padding: 56px 0 36px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .tagline { font-size: 1.15rem; color: var(--muted); margin: 0 0 28px; }
+  h2 { font-size: 1.4rem; margin: 44px 0 12px; letter-spacing: -0.01em; }
+  h3 { font-size: 1.05rem; margin: 24px 0 6px; }
+  p { margin: 0 0 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .btns { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn {
+    display: inline-block; padding: 10px 18px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 0.95rem;
+  }
+  .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  .btn:hover { text-decoration: none; opacity: 0.9; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 20px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 1rem; }
+  .card p { margin: 0; color: var(--muted); font-size: 0.93rem; }
+  figure { margin: 22px 0; }
+  img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; }
+  figcaption { color: var(--muted); font-size: 0.88rem; margin-top: 8px; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+  .shots figure { margin: 0; }
+  .tablewrap { overflow-x: auto; margin: 16px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; }
+  code, pre { background: var(--code); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+  code { padding: 2px 6px; }
+  pre { padding: 14px 16px; overflow-x: auto; margin: 0 0 16px; }
+  pre code { background: none; padding: 0; }
+  ol, ul { margin: 0 0 16px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  footer { margin-top: 56px; padding: 26px 0 60px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
+  .note { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); margin: 0 0 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>Narwal Home Assistant Integration</h1>
+    <p class="tagline">Run your Narwal robot vacuum from Home Assistant over your own network. No Narwal cloud account, no internet round trip, no vendor API keys.</p>
+    <div class="btns">
+      <a class="btn" href="https://my.home-assistant.io/redirect/hacs_repository/?owner=sytchi&amp;repository=NarwalIntegration&amp;category=integration">Add to HACS</a>
+      <a class="btn ghost" href="https://github.com/sytchi/NarwalIntegration">Source on GitHub</a>
+      <a class="btn ghost" href="https://github.com/sytchi/NarwalIntegration/releases">Releases</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<h2>What this is</h2>
+<p>A free, MIT-licensed custom integration that lets Home Assistant talk to a Narwal vacuum directly. The robot exposes a WebSocket service on port 9002 on your LAN, and this integration speaks its protocol, so every command and every status update stays inside your house.</p>
+<p>It began as a fork of <a href="https://github.com/sjmotew/NarwalIntegration">sjmotew's integration</a> and grew into an actively maintained continuation: newer Narwal firmware quietly changed which command the robot honours parameters on, which broke room cleaning for everyone. Fixing that pulled in clean modes, zone cleaning, a redrawn map and a pile of firmware-compatibility work.</p>
+
+<h2>What you get in Home Assistant</h2>
+<div class="grid">
+  <div class="card">
+    <h3>Clean modes that stick</h3>
+    <p>Vacuum, mop, both at once, or vacuum first and mop afterwards. The mode applies to whole-house, per-room and zone cleaning alike.</p>
+  </div>
+  <div class="card">
+    <h3>Zones and rooms</h3>
+    <p>Draw a rectangle on the map card and send the robot there, or start a clean for specific rooms by segment id. Coverage paths are generated for you.</p>
+  </div>
+  <div class="card">
+    <h3>Live HD map</h3>
+    <p>A high-resolution camera entity with the driven trail, the vacuumed strip, planned path, lidar walls and furniture, plus per-layer visibility switches.</p>
+  </div>
+  <div class="card">
+    <h3>Station controls</h3>
+    <p>Wash mop, dry mop and empty dustbin as buttons, mop humidity as a select, and a sensor telling you what the base station is busy with.</p>
+  </div>
+  <div class="card">
+    <h3>Readable faults</h3>
+    <p>48 Narwal error codes translated into states you can actually automate on, in English, French and Polish, instead of a raw integer.</p>
+  </div>
+  <div class="card">
+    <h3>Map card ready</h3>
+    <p>The camera publishes calibration points and a rooms attribute, so the Xiaomi vacuum map card can generate its room config for you in one click.</p>
+  </div>
+</div>
+
+<h2>Screenshots</h2>
+<div class="shots">
+  <figure>
+    <img src="images/map-hd-idle.png" alt="Narwal HD map camera in Home Assistant showing room segments and furniture while the robot is docked" loading="lazy">
+    <figcaption>Docked, with named room segments and furniture.</figcaption>
+  </figure>
+  <figure>
+    <img src="images/map-hd-cleaning.png" alt="Live Narwal map in Home Assistant during a cleaning run with trail and planned path" loading="lazy">
+    <figcaption>Mid-run: driven trail, vacuumed strip and planned path.</figcaption>
+  </figure>
+  <figure>
+    <img src="images/map-hd-zones.png" alt="Zone cleaning overlay on the Narwal map card in Home Assistant" loading="lazy">
+    <figcaption>An active zone sent from the dashboard.</figcaption>
+  </figure>
+</div>
+
+<h2>Supported Narwal models</h2>
+<p>The connection needs port 9002 open on the robot. Check yours with <code>nmap -p 9002 &lt;vacuum-ip&gt;</code>.</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Model</th><th>Status</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Narwal Flow</strong> (AX12)</td><td>Fully supported</td><td>The model I own. Every release is developed and tested on it, firmware up to v01.08.03.</td></tr>
+    <tr><td><strong>Narwal Flow 2</strong></td><td>Probably working</td><td>Worked on the upstream integration; this fork's newer features are not re-tested on it.</td></tr>
+    <tr><td><strong>Freo Z10 Ultra</strong> (CX4)</td><td>Probably working</td><td>Community-confirmed upstream, unverified here.</td></tr>
+    <tr><td><strong>Freo X10 Pro</strong> (AX15)</td><td>Probably working</td><td>Community-confirmed upstream, unverified here.</td></tr>
+    <tr><td>Freo Z Ultra, Freo X Ultra, Freo X Plus, J-series</td><td>Not compatible</td><td>Cloud-only or a different protocol entirely. A hardware limitation, not something an integration can fix.</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Owning a model that is not listed? If port 9002 answers, please open an issue with your model and results, it usually means it can work.</p>
+
+<h2>Installing it</h2>
+<p>The integration ships as a HACS custom repository.</p>
+<ol>
+  <li>In Home Assistant, open <strong>HACS</strong>, then the three-dot menu, then <strong>Custom repositories</strong>.</li>
+  <li>Add <code>https://github.com/sytchi/NarwalIntegration</code> with category <strong>Integration</strong>.</li>
+  <li>Download <strong>Narwal Flow Robot Vacuum</strong> and restart Home Assistant.</li>
+  <li>Add the integration from <strong>Settings &gt; Devices &amp; services</strong> and give it your vacuum's IP address.</li>
+</ol>
+<p>Requirements are modest: Home Assistant 2025.1.0 or newer, the robot on the same network, and nothing blocking port 9002. A static DHCP lease for the vacuum is a good idea, since the integration is configured by IP.</p>
+
+<h2>Honest limitations</h2>
+<ul>
+  <li><strong>Deep sleep is a wall.</strong> The WiFi module answers a TCP handshake while the robot's main processor sleeps, so Home Assistant connects but hears nothing. Opening the phone app wakes it. There is no reliable local wake, and that is a protocol limit rather than a bug.</li>
+  <li><strong>One client at a time.</strong> The robot talks to a single WebSocket client. A second connection, including a debugging session, silences the first.</li>
+  <li><strong>Fan speed is write-only.</strong> The robot accepts a level but never broadcasts the current one.</li>
+  <li><strong>Firmware drift.</strong> Narwal changes payload schemas between firmware generations without notice. This is validated on Flow firmware v01.08.03.</li>
+</ul>
+
+<h2>Protocol notes</h2>
+<p>None of this is documented by the vendor: Narwal has no public API and declined to open one. The command format was reconstructed from captured traffic and the wire protocol is protobuf without a schema. If you are reverse engineering a Narwal yourself, two findings save the most time. Recent firmware ignores the payload you send to <code>clean/plan/start</code> and simply replays whatever shortcut is stored on the robot, and <code>clean/start_clean</code> is the path that honours parameters, but it rejects the task unless the coverage path field is filled in. The robot never validates that path, so a generated serpentine over the target area is enough.</p>
+
+</main>
+
+<footer class="wrap">
+  <p>MIT licensed. Built on the original work of <a href="https://github.com/sjmotew/NarwalIntegration">sjmotew</a>, with room-cleaning findings from jgus and reports from the Home Assistant community.</p>
+  <p>Not affiliated with, endorsed by or supported by Narwal. "Narwal" and product names are trademarks of their respective owner and are used here only to describe compatibility. Use at your own risk.</p>
+</footer>
+
+</body>
+</html>
