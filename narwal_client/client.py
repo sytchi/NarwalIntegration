@@ -64,6 +64,8 @@ from .models import (
     NarwalState,
     PlannedTrajectory,
 )
+from .protobuf_decoder import ProtobufDecodeError
+from .protobuf_decoder import decode as decode_protobuf
 from .protocol import (
     PROTOBUF_FIELD5_TAG,
     NarwalMessage,
@@ -73,6 +75,23 @@ from .protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Broadcast topics that are never deduplicated. Their handlers stamp an
+# arrival time (`received_at`, `_last_display_map_time`) that downstream
+# freshness checks rely on, so every frame has to go through even when the
+# bytes repeat. In practice neither topic repeats anyway — both carry a
+# monotonically growing timestamp inside the payload.
+DEDUP_EXEMPT_TOPICS = frozenset(
+    {
+        "map/display_map",
+        "status/point_navi_plan_traj",
+    }
+)
+
+# Upper bound on the per-topic payload cache used for deduplication. The
+# robot broadcasts fewer than 10 distinct topics, so this only guards
+# against an unexpected topic flood growing the cache without bound.
+DEDUP_CACHE_MAX_TOPICS = 32
 
 
 class NarwalConnectionError(Exception):
@@ -121,10 +140,15 @@ class NarwalClient:
         self._robot_awake = False  # True once we receive a broadcast
         self._last_broadcast_time: float = 0.0  # monotonic time of last broadcast
         self._last_display_map_time: float = 0.0  # monotonic time of last display_map
+        # Last raw payload seen per broadcast topic — repeats are dropped
+        # before the expensive decode + entity fan-out (see _is_duplicate_broadcast)
+        self._last_payloads: dict[str, bytes] = {}
         # Queue for field5 command responses
         self._response_queue: asyncio.Queue[NarwalMessage] = asyncio.Queue()
         # Lock to prevent concurrent send_command calls from racing on the queue
         self._command_lock = asyncio.Lock()
+        # How often _decode_protobuf had to fall back to blackboxprotobuf
+        self._decode_fallbacks = 0
 
     def _full_topic(self, short_topic: str) -> str:
         """Build the full topic path."""
@@ -353,6 +377,13 @@ class NarwalClient:
                 async for raw_message in self._ws:
                     if isinstance(raw_message, bytes):
                         await self._handle_message(raw_message)
+                    # Hand the event loop back between frames. `websockets`
+                    # keeps yielding buffered frames without ever suspending,
+                    # so several frames end up handled inside a single loop
+                    # iteration (measured: up to 5) and their costs add up
+                    # into one blocking step. This costs nothing and caps the
+                    # block at a single frame.
+                    await asyncio.sleep(0)
 
             except NarwalConnectionError as e:
                 _LOGGER.warning("Connection failed: %s", e)
@@ -367,6 +398,9 @@ class NarwalClient:
                 self._listener_active = False
                 self._robot_awake = False
                 self._connected.clear()
+                # Forget deduplication history: after a reconnect the first
+                # frame of every topic must reach the entities again.
+                self._last_payloads.clear()
                 for task in (self._heartbeat_task, self._keepalive_task):
                     if task and not task.done():
                         task.cancel()
@@ -411,6 +445,14 @@ class NarwalClient:
 
         # Decode protobuf and update state based on topic
         short_topic = msg.short_topic
+
+        # Identical payload = nothing to learn. Dropping it here skips both
+        # the protobuf decode and the coordinator fan-out over every entity.
+        # Must stay BELOW the awake/last-broadcast bookkeeping above: a
+        # repeated frame is still proof that the robot is alive.
+        if self._is_duplicate_broadcast(short_topic, msg.payload):
+            return
+
         _LOGGER.debug("Broadcast topic: %s (tag=0x%02x)", short_topic, msg.field_tag)
         try:
             decoded = self._decode_protobuf(msg.payload)
@@ -444,8 +486,77 @@ class NarwalClient:
         if self.on_state_update:
             self.on_state_update(self.state)
 
+    def _is_duplicate_broadcast(self, short_topic: str, payload: bytes) -> bool:
+        """Return True when this payload repeats the previous one verbatim.
+
+        The robot re-broadcasts unchanged status frames at a fixed rate:
+        measured over 415 frames, 62% carried bytes identical to the
+        previous frame of the same topic (`download_status` and
+        `upgrade_status` 98.6%, `robot_base_status` 89.2%). Every
+        ``update_from_*`` handler is a plain setter, so decoding those
+        frames and pushing them to the entities cannot change anything —
+        it only blocks the event loop.
+
+        The comparison is on raw bytes rather than a digest: payloads are
+        small (2-200 B for the deduplicated topics) and ``bytes.__eq__``
+        is a length check plus memcmp, which beats hashing them and has no
+        collision risk. Only one payload per topic is retained.
+        """
+        if short_topic in DEDUP_EXEMPT_TOPICS:
+            return False
+
+        cache = self._last_payloads
+        if cache.get(short_topic) == payload:
+            return True
+
+        if short_topic not in cache and len(cache) >= DEDUP_CACHE_MAX_TOPICS:
+            # Evict the oldest entry (dicts keep insertion order) so topics
+            # that stopped arriving cannot pin memory forever.
+            del cache[next(iter(cache))]
+        cache[short_topic] = payload
+        return False
+
     def _decode_protobuf(self, payload: bytes) -> dict[str, Any]:
-        """Decode a protobuf payload without a schema using blackboxprotobuf."""
+        """Decode a protobuf payload without a schema.
+
+        Fast path: our own wire-format decoder (``protobuf_decoder``), which is
+        bit-for-bit compatible with blackboxprotobuf for every payload it
+        accepts — verified against 325 unique captured live frames and 40k
+        generated payloads.  It is ~7x faster on a Home Assistant host, which
+        matters because this runs inline in the event loop for every broadcast
+        (~3/s).
+
+        Fallback: blackboxprotobuf, for the payloads our decoder refuses.  That
+        happens when reproducing bbpb's output would need bbpb's own type
+        inference (a repeated message field whose sub-fields change type
+        between occurrences — bbpb then files them under suffixed keys such as
+        ``"12-1"``), and for genuinely malformed payloads.  We fall back rather
+        than skip the frame: a skipped broadcast means state that silently
+        stops updating, while bbpb has been decoding these payloads correctly
+        for the whole life of the integration.  bbpb stays a hard dependency
+        regardless — the command *encoders* still use it.
+        """
+        try:
+            return decode_protobuf(payload)
+        except ProtobufDecodeError as err:
+            self._decode_fallbacks += 1
+            if self._decode_fallbacks == 1:
+                # Once, loudly: if this ever fires in the field we want to know,
+                # because the fast path is why the event loop stopped stalling.
+                _LOGGER.warning(
+                    "Falling back to blackboxprotobuf for a %d-byte payload "
+                    "(%s). Further occurrences are logged at debug level.",
+                    len(payload),
+                    err,
+                )
+            else:
+                _LOGGER.debug(
+                    "blackboxprotobuf fallback #%d for a %d-byte payload (%s)",
+                    self._decode_fallbacks,
+                    len(payload),
+                    err,
+                )
+
         import blackboxprotobuf  # lazy import — heavy dependency
 
         decoded, _ = blackboxprotobuf.decode_message(payload)

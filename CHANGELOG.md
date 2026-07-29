@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-07-29
+
+> ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
+
+### Changed
+- Broadcast decoding no longer uses `blackboxprotobuf`. A purpose-built wire-format
+  decoder (`narwal_client/protobuf_decoder.py`) is 7.1x faster and bit-for-bit
+  compatible; payloads it cannot reproduce fall back to the library.
+- Duplicate broadcasts are skipped before decoding. While docked, ~84% of frames
+  are byte-identical repeats of the previous one.
+- The WebSocket listener yields between frames, so several buffered frames no
+  longer land in a single blocking event-loop step.
+
+Event-loop time blocked by the listener, measured on a live Home Assistant host
+(x86_64, CPython 3.14): **11.44 ms/s to 0.11 ms/s while docked**, **7.0 ms/s
+while cleaning** (0.7% of wall time).
+
 ## [2.1.1] - 2026-07-27
 
 > ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
