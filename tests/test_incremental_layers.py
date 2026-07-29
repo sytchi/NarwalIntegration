@@ -74,10 +74,14 @@ def _pixels(png: bytes) -> bytes:
     return Image.open(io.BytesIO(png)).convert("RGB").tobytes()
 
 
-def _render_incremental(cells, quads, *, chunks=5, show_swath=True, show_lidar=True):
+def _render_incremental(cells, quads, *, chunks=5, show_swath=True,
+                        show_lidar=True, zones=None, cleaned_mask=None):
     """Feed cells/quads in `chunks` frames (mimicking accumulation) and return
     the final PNG, exactly as the camera drives render_map_frame."""
     base = _varied_base()
+    overlay = {**_OVERLAY, "zones": zones}
+    if cleaned_mask is not None:
+        overlay["cleaned_mask"] = cleaned_mask
     swath_layer = lidar_layer = lidar_mask = None
     drawn: set[tuple[int, int]] = set()
     png = b""
@@ -92,19 +96,23 @@ def _render_incremental(cells, quads, *, chunks=5, show_swath=True, show_lidar=T
             lidar_layer=lidar_layer, lidar_mask=lidar_mask,
             new_wall_cells=new_cells,
             show_lidar=show_lidar,
-            overlay_kwargs=_OVERLAY,
+            overlay_kwargs=overlay,
         )
         drawn.update(new_cells)
     return png
 
 
-def _render_full(cells, quads, *, show_swath=True, show_lidar=True):
+def _render_full(cells, quads, *, show_swath=True, show_lidar=True,
+                 zones=None, cleaned_mask=None):
     base = _varied_base()
+    overlay = {**_OVERLAY, "zones": zones}
+    if cleaned_mask is not None:
+        overlay["cleaned_mask"] = cleaned_mask
     return render_overlay(
         base, GW, GH, scale=SCALE,
         wall_cells=list(cells) if show_lidar else None,
         swath_strips=quads if show_swath else None,
-        **_OVERLAY,
+        **overlay,
     )
 
 
@@ -135,6 +143,84 @@ class TestPixelIdentical:
         cells, quads = _cells(300), _quads(150)
         assert _pixels(_render_incremental(cells, quads, show_lidar=False)) == \
             _pixels(_render_full([], quads, show_lidar=False))
+
+
+class TestBuiltUpBranchStillDrawsOnTop:
+    """A zone highlight or a cleaned-area tint sits UNDER the strip, so those
+    frames cannot start from the accumulated strip and are built up on a
+    transparent canvas instead — during which ``alpha_composite`` replaces the
+    layer object. Everything drawn afterwards (planned path, trail, dock,
+    robot) has to land on the composited image, not on the discarded one."""
+
+    def _variants(self):
+        mask = Image.new("L", (GW, GH), 0)
+        mask.paste(255, (5, 5, 25, 35))
+        return [
+            ("zones", {"zones": [(4, 4, 20, 30), (24, 32, 36, 46)]}),
+            ("cleaned_mask", {"cleaned_mask": mask}),
+        ]
+
+    def _frame(self, base, layer, lidar, lmask, **over):
+        overlay = {**_OVERLAY, **over}
+        return _pixels(render_overlay(
+            base, GW, GH, scale=SCALE,
+            swath_layer=layer, lidar_layer=lidar, lidar_mask=lmask,
+            **overlay,
+        ))
+
+    def _fixtures(self):
+        base = _varied_base()
+        layer = extend_swath_layer(None, GW, GH, SCALE, _quads(150))
+        lidar, lmask = extend_lidar_layer(
+            None, None, GW, GH, SCALE, base, _cells(300),
+        )
+        return base, layer, lidar, lmask
+
+    def test_trail_still_drawn_over_the_composite(self) -> None:
+        base, layer, lidar, lmask = self._fixtures()
+        for name, kw in self._variants():
+            on = self._frame(base, layer, lidar, lmask,
+                             show_trail_line=True, **kw)
+            off = self._frame(base, layer, lidar, lmask,
+                              show_trail_line=False, **kw)
+            assert on != off, f"trail lost in the {name} branch"
+
+    def test_robot_still_drawn_over_the_composite(self) -> None:
+        base, layer, lidar, lmask = self._fixtures()
+        for name, kw in self._variants():
+            a = self._frame(base, layer, lidar, lmask, robot_x=12.0, **kw)
+            b = self._frame(base, layer, lidar, lmask, robot_x=30.0, **kw)
+            assert a != b, f"robot lost in the {name} branch"
+
+
+class TestSwathLayerTransparencyInvariant:
+    """``render_overlay`` starts a frame from a copy of the accumulated strip
+    instead of compositing it onto a freshly allocated transparent canvas.
+    That is only equivalent because every pixel the strip does not cover is
+    exactly (0, 0, 0, 0) — compositing a colour that is invisible (alpha 0)
+    onto transparency would NOT round-trip through alpha_composite."""
+
+    def test_uncovered_pixels_are_fully_zero(self) -> None:
+        layer = extend_swath_layer(None, GW, GH, SCALE, _quads(150))
+        zero_alpha_but_coloured = [
+            px for px in layer.getdata() if px[3] == 0 and px[:3] != (0, 0, 0)
+        ]
+        assert zero_alpha_but_coloured == []
+
+    def test_drawn_pixels_are_never_alpha_zero(self) -> None:
+        blank = extend_swath_layer(None, GW, GH, SCALE, [])
+        drawn = extend_swath_layer(None, GW, GH, SCALE, _quads(150))
+        assert drawn.tobytes() != blank.tobytes()  # something was drawn
+        alphas = {px[3] for px in drawn.getdata()}
+        assert alphas - {0}, "the strip fill must be visible"
+        assert 0 in alphas, "the strip must not cover the whole canvas"
+
+    def test_copy_of_layer_equals_composite_onto_transparent(self) -> None:
+        # The exact substitution render_overlay makes, pinned on this layer.
+        s = SCALE * OVERLAY_SUPERSAMPLE
+        layer = extend_swath_layer(None, GW, GH, SCALE, _quads(150))
+        blank = Image.new("RGBA", (GW * s, GH * s), (0, 0, 0, 0))
+        assert layer.copy().tobytes() == Image.alpha_composite(blank, layer).tobytes()
 
 
 class TestExtendLayers:

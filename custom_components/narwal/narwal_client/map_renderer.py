@@ -708,6 +708,12 @@ def extend_swath_layer(
     makes each frame O(new). Output is identical to drawing all quads on a
     fresh layer: the fill is a constant colour and ImageDraw REPLACES pixels,
     so re-drawing overlaps would be a no-op anyway.
+
+    Invariant relied on by ``render_overlay``: every pixel this layer does not
+    cover is exactly (0, 0, 0, 0) — the fill colour is opaque enough that a
+    drawn pixel never has alpha 0. That is what makes compositing this layer
+    onto a transparent canvas a no-op, and lets render_overlay start a frame
+    from a copy of it instead.
     """
     from PIL import Image, ImageDraw
 
@@ -966,50 +972,75 @@ def render_overlay(
     from PIL import Image, ImageDraw
 
     s = scale * max(1, supersample)
-    layer = Image.new("RGBA", (grid_width * s, grid_height * s), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
+    size = (grid_width * s, grid_height * s)
 
     def to_img(gx: float, gy: float) -> tuple[float, float]:
         return ((gx + 0.5) * s, (grid_height - 0.5 - gy) * s)
 
-    # Cleaned-area tint (bottom-most overlay)
-    if cleaned_mask is not None:
-        mask = cleaned_mask.transpose(Image.FLIP_TOP_BOTTOM).resize(
-            layer.size, Image.NEAREST,
-        )
-        layer.paste(COLOR_CLEANED_TINT, mask=mask)
+    # Bottom of the overlay stack: the cleaned-area tint, then the target
+    # zones, then the accumulated vacuumed strip.
+    #
+    # In the usual frame there is neither a cleaned-area tint nor a zone, so
+    # everything below the strip is fully transparent and the strip IS the
+    # bottom layer. Compositing it onto a freshly allocated transparent canvas
+    # then yields the strip back unchanged (see ``extend_swath_layer``: its
+    # transparent pixels are literally (0, 0, 0, 0)), so start from a copy of
+    # it instead and skip both the allocation and a full-canvas composite of
+    # the supersampled layer — the two most expensive fixed costs of a frame.
+    if swath_layer is not None and cleaned_mask is None and not zones:
+        layer = swath_layer.copy()
+    else:
+        layer = Image.new("RGBA", size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
 
-    # Target zones (semi-transparent amber fill + solid outline) — drawn UNDER
-    # the vacuumed strip and lidar so cleaning progress and walls show ON TOP of
-    # the highlighted zone instead of being hidden by the amber fill.
-    if zones:
-        for x_min, y_min, x_max, y_max in zones:
-            gx0, gx1 = min(x_min, x_max), max(x_min, x_max)
-            gy0, gy1 = min(y_min, y_max), max(y_min, y_max)
-            px0 = gx0 * s
-            px1 = (gx1 + 1) * s - 1
-            py0 = (grid_height - 1 - gy1) * s
-            py1 = (grid_height - gy0) * s - 1
-            draw.rectangle(
-                [px0, py0, px1, py1],
-                fill=COLOR_ZONE_FILL,
-                outline=COLOR_ZONE_OUTLINE,
-                width=2 * s,
+        # Cleaned-area tint (bottom-most overlay)
+        if cleaned_mask is not None:
+            mask = cleaned_mask.transpose(Image.FLIP_TOP_BOTTOM).resize(
+                size, Image.NEAREST,
             )
+            layer.paste(COLOR_CLEANED_TINT, mask=mask)
 
-    # Vacuumed strip: quads between the field-12 rail pair — the robot's
-    # own record of the freshly vacuumed 11.4 cm track. ImageDraw on an
-    # RGBA layer REPLACES pixels, so overlapping quads don't stack.
-    # A pre-accumulated ``swath_layer`` (built incrementally by the camera so
-    # per-frame cost stays O(new quads) instead of O(total)) is composited
-    # directly; ``swath_strips`` is the stateless fallback for callers/tests.
-    if swath_layer is not None:
-        layer.alpha_composite(swath_layer)
-    elif swath_strips:
-        for quad in swath_strips:
-            draw.polygon(
-                [to_img(px, py) for px, py in quad], fill=COLOR_TRAIL_STRIP,
-            )
+        # Target zones (semi-transparent amber fill + solid outline) — drawn
+        # UNDER the vacuumed strip and lidar so cleaning progress and walls show
+        # ON TOP of the highlighted zone instead of being hidden by the amber
+        # fill.
+        if zones:
+            for x_min, y_min, x_max, y_max in zones:
+                gx0, gx1 = min(x_min, x_max), max(x_min, x_max)
+                gy0, gy1 = min(y_min, y_max), max(y_min, y_max)
+                px0 = gx0 * s
+                px1 = (gx1 + 1) * s - 1
+                py0 = (grid_height - 1 - gy1) * s
+                py1 = (grid_height - gy0) * s - 1
+                draw.rectangle(
+                    [px0, py0, px1, py1],
+                    fill=COLOR_ZONE_FILL,
+                    outline=COLOR_ZONE_OUTLINE,
+                    width=2 * s,
+                )
+
+        # Vacuumed strip: quads between the field-12 rail pair — the robot's
+        # own record of the freshly vacuumed 11.4 cm track. ImageDraw on an
+        # RGBA layer REPLACES pixels, so overlapping quads don't stack.
+        # A pre-accumulated ``swath_layer`` (built incrementally by the camera
+        # so per-frame cost stays O(new quads) instead of O(total)) is
+        # composited directly; ``swath_strips`` is the stateless fallback for
+        # callers/tests.
+        if swath_layer is not None:
+            # The module-level alpha_composite() runs the same C routine as the
+            # in-place Image.alpha_composite() method but in ONE pass: the
+            # method is implemented as crop + composite + paste, i.e. three
+            # full-canvas passes over a 4×-supersampled RGBA buffer.
+            layer = Image.alpha_composite(layer, swath_layer)
+        elif swath_strips:
+            for quad in swath_strips:
+                draw.polygon(
+                    [to_img(px, py) for px, py in quad], fill=COLOR_TRAIL_STRIP,
+                )
+
+    # alpha_composite() above returns a NEW image, so bind the drawing context
+    # to whatever `layer` ended up being.
+    draw = ImageDraw.Draw(layer)
 
     # Lidar wall/obstacle observations (field 7) — cell marks refining the
     # rasterized walls with what the robot actually measured. Each mark
