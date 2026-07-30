@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-30
+
+> ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
+
+### Changed
+- Map render: the overlay frame now starts from a copy of the accumulated
+  vacuumed strip instead of allocating a canvas and compositing the strip onto it.
+- Map render: the zone branch uses the module-level `Image.alpha_composite`
+  instead of the in-place method, which Pillow implements as crop + composite +
+  paste, three passes over a 13.9 MB buffer.
+
+Rendered output is byte-identical (verified pixel-for-pixel on real map data).
+About 44 ms less per rendered frame on a Home Assistant host, roughly -8%.
+
 ## [2.1.2] - 2026-07-29
 
 > ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
