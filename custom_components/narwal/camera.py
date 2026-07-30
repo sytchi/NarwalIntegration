@@ -146,6 +146,11 @@ class NarwalMapCamera(NarwalEntity, Camera):
         for MJPEG refresh. calibration_points let xiaomi-vacuum-map-card
         map image pixels to robot world coordinates
         (``calibration_source: {camera: true}``).
+
+        Must stay cheap: HA reads this on every state write. ``rooms`` is
+        only ever read from the cache the render path fills in an executor
+        (see ``_compute_rooms_attribute``); the key is absent until the
+        first saved map has been processed.
         """
         attrs: dict = {"render_count": self._render_count}
         static_map = self.coordinator.client.state.map_data
@@ -159,11 +164,18 @@ class NarwalMapCamera(NarwalEntity, Camera):
                 static_map.origin_y,
                 self._scale,
             )
-            attrs["rooms"] = self._get_rooms_attribute(static_map)
+            if self._rooms_attr is not None:
+                attrs["rooms"] = self._rooms_attr
         return attrs
 
-    def _get_rooms_attribute(self, static_map) -> dict:
-        """Per-room outlines in world coordinates, cached per saved map.
+    def _compute_rooms_attribute(self, static_map) -> dict:
+        """Per-room outlines in world coordinates. RUNS IN AN EXECUTOR.
+
+        Decoding the saved-map grid and tracing every room contour costs
+        hundreds of milliseconds on typical HA hardware, so this must never
+        run on the event loop. The render path calls it through
+        ``async_add_executor_job`` whenever the saved map changes and caches
+        the result in ``_rooms_attr``; the state attribute only reads it.
 
         Format matches what xiaomi-vacuum-map-card's "Generate rooms
         config" editor button reads from the ``map_source`` camera's
@@ -172,9 +184,6 @@ class NarwalMapCamera(NarwalEntity, Camera):
         predefined_selections are world coordinates and feed
         ``narwal.clean_rooms`` / ``narwal.clean_zone`` directly.
         """
-        static_ts = static_map.created_at or 0
-        if self._rooms_attr is not None and static_ts == self._rooms_attr_ts:
-            return self._rooms_attr
         from .narwal_client.map_renderer import compute_room_outlines
 
         try:
@@ -198,8 +207,6 @@ class NarwalMapCamera(NarwalEntity, Camera):
         for rid, room in rooms.items():
             if rid in names:
                 room["name"] = names[rid]
-        self._rooms_attr = rooms
-        self._rooms_attr_ts = static_ts
         return rooms
 
     def _record_debug_viewport(self, x: float, y: float) -> None:
@@ -404,6 +411,16 @@ class NarwalMapCamera(NarwalEntity, Camera):
             else:
                 self.async_write_ha_state()
                 return
+
+        # Room outlines derive from the saved map alone, so recompute them
+        # only when it changes - and off the event loop, since decoding the
+        # grid and tracing contours takes hundreds of ms. The state attribute
+        # reads the cache this fills.
+        if static_ts != self._rooms_attr_ts:
+            self._rooms_attr = await self.hass.async_add_executor_job(
+                partial(self._compute_rooms_attribute, static_map)
+            )
+            self._rooms_attr_ts = static_ts
 
         # Compute robot grid position from the freshest source (display_map
         # pose or planned-trajectory head — display_map drops out for 30s+

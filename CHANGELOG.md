@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Map camera: the `rooms` attribute is no longer computed on the event loop.
+  Decoding the saved-map grid and tracing every room contour ran inline in the
+  state-attribute property, blocking Home Assistant for hundreds of milliseconds
+  each time the robot saved a new map. It now runs in an executor from the render
+  path and the attribute reads the cached result. The `rooms` key is absent until
+  the first map has been processed, instead of an empty dict.
+
 ## [2.1.5] - 2026-08-23
 
 > ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
