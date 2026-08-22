@@ -5,7 +5,9 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.5] - 2026-08-23
+
+> ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.
 
 ### Fixed
 - Commands no longer die silently when the connection drops under them. A
