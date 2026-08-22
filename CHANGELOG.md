@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The error sensor no longer shows a bare number for a fault code it does not
+  know. Unknown codes now report `unknown_error` (a translated state) and are
+  logged once with the code and the robot's own message, so they can be named.
+- Fault code `0x02020030` (side brush fault while sweeping) is recognized. It is
+  absent from Narwal's help-center language packs; observed on a Flow.
+
 ## [2.1.3] - 2026-07-30
 
 > ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.

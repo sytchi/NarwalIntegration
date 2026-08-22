@@ -86,6 +86,9 @@ ERROR_CODE_SLUGS: dict[int, str] = {
     0x02020013: "mop_lifting_error",  # 1009-1010
     0x02020015: "mop_motor_overcurrent",  # 1122
     0x02020028: "side_brush_error",  # 1041-1043
+    # Live-observed 2026-08-22; no help-center article for this code.
+    # Firmware message 扫地时右边刷异常 = right side brush fault while sweeping.
+    0x02020030: "side_brush_error",
     0x02020031: "roller_brush_entangled",  # 1044
     0x02020032: "dust_bin_not_in_place",  # 1045
     0x02020040: "mopping_module_error",  # 1036-1038

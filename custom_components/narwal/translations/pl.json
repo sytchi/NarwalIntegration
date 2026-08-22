@@ -117,7 +117,8 @@
           "cliff_sensor_error": "Błąd czujnika przepaści",
           "wall_sensor_error": "Błąd czujnika ściany (PSD)",
           "ultrasonic_sensor_error": "Błąd czujnika ultradźwiękowego podłoża",
-          "bumper_error": "Błąd zderzaka"
+          "bumper_error": "Błąd zderzaka",
+          "unknown_error": "Nieznana usterka"
         }
       }
     },

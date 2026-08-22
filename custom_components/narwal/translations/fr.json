@@ -116,7 +116,8 @@
           "cliff_sensor_error": "Erreur du capteur de vide",
           "wall_sensor_error": "Erreur du capteur de mur (PSD)",
           "ultrasonic_sensor_error": "Erreur du capteur à ultrasons du sol",
-          "bumper_error": "Erreur du pare-chocs"
+          "bumper_error": "Erreur du pare-chocs",
+          "unknown_error": "Panne inconnue"
         }
       }
     },

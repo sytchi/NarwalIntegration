@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -20,6 +21,12 @@ from .const import ERROR_CODE_SLUGS, ERROR_HELP_URL_TEMPLATE
 from .coordinator import NarwalCoordinator
 from .entity import NarwalEntity
 from .narwal_client import NarwalState, WorkingStatus
+
+_LOGGER = logging.getLogger(__name__)
+
+# Fault codes already reported in the log, so an unknown code is announced
+# once instead of on every state read.
+_LOGGED_UNKNOWN_CODES: set[int] = set()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -154,7 +161,8 @@ class NarwalErrorSensor(NarwalEntity, SensorEntity):
     """Active fault reported by the robot.
 
     State is "no_error", a translation slug for known fault codes
-    (ERROR_CODE_SLUGS), or the numeric fault code for unknown ones.
+    (ERROR_CODE_SLUGS), or "unknown_error" for codes we have no slug for —
+    every state is a translation key, so the UI never shows a bare number.
     The numeric code stays available as the "code" attribute (the
     firmware's message arrives in its own locale, so the code is the
     stable key for automations).
@@ -171,13 +179,25 @@ class NarwalErrorSensor(NarwalEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """Return no_error, a known-fault slug, or the raw code."""
+        """Return no_error, a known-fault slug, or unknown_error."""
         state = self.coordinator.data
         if state is None:
             return None
         if not state.error_code:
             return "no_error"
-        return ERROR_CODE_SLUGS.get(state.error_code, str(state.error_code))
+        slug = ERROR_CODE_SLUGS.get(state.error_code)
+        if slug is not None:
+            return slug
+        if state.error_code not in _LOGGED_UNKNOWN_CODES:
+            _LOGGED_UNKNOWN_CODES.add(state.error_code)
+            _LOGGER.warning(
+                "Unknown Narwal fault code %s (0x%08X), robot says %r — reported as "
+                "'unknown_error'. Please report these values so the code can be named.",
+                state.error_code,
+                state.error_code,
+                state.error_message,
+            )
+        return "unknown_error"
 
     @property
     def extra_state_attributes(self) -> dict[str, str | int] | None:

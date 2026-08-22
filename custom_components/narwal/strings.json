@@ -117,7 +117,8 @@
           "cliff_sensor_error": "Cliff sensor error",
           "wall_sensor_error": "Wall sensor (PSD) error",
           "ultrasonic_sensor_error": "Floor ultrasonic sensor error",
-          "bumper_error": "Bumper malfunction"
+          "bumper_error": "Bumper malfunction",
+          "unknown_error": "Unknown fault"
         }
       }
     },
