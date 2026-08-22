@@ -90,9 +90,8 @@ class NarwalButton(NarwalEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press."""
         client = self.coordinator.client
-        if self.entity_description.wake_first and not client.robot_awake:
-            _LOGGER.debug("Robot not awake — sending wake burst before %s", self.entity_description.key)
-            await client.wake(timeout=10.0)
+        if self.entity_description.wake_first:
+            await client.ensure_awake(timeout=10.0)
         resp = await self.entity_description.press_fn(client)
         result = getattr(resp, "result_code", None)
         if result is not None and result != CommandResult.SUCCESS:

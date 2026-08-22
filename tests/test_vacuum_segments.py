@@ -172,7 +172,7 @@ class TestAsyncCleanSegments:
         )
         vac.coordinator.client.start_rooms = AsyncMock()
         # Mock wake so it's a no-op
-        vac.coordinator.client.robot_awake = True
+        vac.coordinator.client.ensure_awake = AsyncMock(return_value=True)
         vac.coordinator.client.wake = AsyncMock()
 
         await vac.async_clean_segments(["11", "9"])

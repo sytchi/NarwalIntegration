@@ -13,13 +13,17 @@ import websockets
 import websockets.exceptions
 
 from .const import (
+    AWAKE_BROADCAST_MAX_AGE,
     BROADCAST_STALE_TIMEOUT,
     CLEAN_MODE_TO_TASK_TYPE,
     CLEAN_MODE_TO_V2,
+    COMMAND_RECONNECT_WAIT,
     COMMAND_RESPONSE_TIMEOUT,
+    COMMAND_RETRY_WAKE_TIMEOUT,
     DEFAULT_PORT,
     DEFAULT_TOPIC_PREFIX,
     HEARTBEAT_INTERVAL,
+    IDEMPOTENT_COMMANDS,
     KEEPALIVE_INTERVAL,
     KNOWN_PRODUCT_KEYS,
     RECONNECT_BACKOFF_FACTOR,
@@ -51,6 +55,8 @@ from .const import (
     TOPIC_CMD_WASH_MOP,
     TOPIC_CMD_YELL,
     WAKE_TIMEOUT,
+    WS_PING_INTERVAL,
+    WS_PING_TIMEOUT,
     CleanMode,
     CommandResult,
     FanLevel,
@@ -100,6 +106,20 @@ class NarwalConnectionError(Exception):
 
 class NarwalCommandError(Exception):
     """Raised when a command fails or times out."""
+
+
+class NarwalTransportError(NarwalConnectionError):
+    """Raised when the WebSocket dies around a command.
+
+    ``frame_sent`` is False when the frame provably never left the socket. In
+    that case re-sending cannot duplicate anything, so even a command that is
+    unsafe to repeat can be retried.
+    """
+
+    def __init__(self, message: str, *, frame_sent: bool) -> None:
+        """Store whether the command frame made it onto the wire."""
+        super().__init__(message)
+        self.frame_sent = frame_sent
 
 
 class NarwalClient:
@@ -186,7 +206,9 @@ class NarwalClient:
         """
         try:
             self._ws = await websockets.connect(
-                self.url, ping_interval=30, ping_timeout=10
+                self.url,
+                ping_interval=WS_PING_INTERVAL,
+                ping_timeout=WS_PING_TIMEOUT,
             )
             self._connected.set()
             _LOGGER.info("Connected to Narwal vacuum at %s", self.url)
@@ -752,6 +774,31 @@ class NarwalClient:
         _LOGGER.warning("Robot did not wake up within %.0fs (%d attempts)", timeout, attempt)
         return False
 
+    async def ensure_awake(self, timeout: float = WAKE_TIMEOUT) -> bool:
+        """Make sure the robot is listening before a command goes out.
+
+        Prefers the age of the last broadcast over the robot_awake flag: the
+        flag survives up to BROADCAST_STALE_TIMEOUT of silence, and a command
+        sent in that window skips the wake burst and lands nowhere.
+
+        Returns:
+            True if the robot is broadcasting, False if it stayed silent. The
+            caller may still send the command — a shallow sleeper often obeys
+            without ever confirming the wake, and send_command() retries once
+            behind a forced wake if it does not.
+        """
+        stale = self.last_broadcast_age > AWAKE_BROADCAST_MAX_AGE
+        if self._robot_awake and not stale:
+            return True
+
+        _LOGGER.debug(
+            "Robot not broadcasting (awake=%s, last broadcast %.1fs ago) — "
+            "sending wake burst",
+            self._robot_awake,
+            self.last_broadcast_age,
+        )
+        return await self.wake(timeout=timeout, force=stale)
+
     # Topic subscription duration (seconds) and renewal interval
     _TOPIC_SUB_DURATION = 600  # 10 minutes — matches what Narwal app sends
     _TOPIC_RESUB_INTERVAL = 480  # re-subscribe every 8 min (before 10min expiry)
@@ -871,10 +918,17 @@ class NarwalClient:
         payload: bytes = b"",
         timeout: float = COMMAND_RESPONSE_TIMEOUT,
     ) -> CommandResponse:
-        """Send a command and wait for the field5 response.
+        """Send a command, recovering once from a lost connection or a sleeper.
 
-        Uses a lock to prevent concurrent commands from racing on the
-        response queue. Works both with and without start_listening().
+        A command can fail for two reasons that look identical from the
+        outside: the socket died under it (the library drops the connection on
+        a late pong, which a robot roaming the house triggers regularly), or
+        the robot stopped listening and never answered. Both are recoverable —
+        wait for the listener loop to reconnect, force a wake burst, re-send.
+
+        The retry is unconditional when the frame provably never left the
+        socket. When the robot may already have executed the command, only
+        topics in IDEMPOTENT_COMMANDS are re-sent.
 
         Args:
             short_topic: Command topic without prefix/device_id.
@@ -885,8 +939,68 @@ class NarwalClient:
             CommandResponse with result code and decoded data.
 
         Raises:
-            NarwalConnectionError: If not connected.
-            NarwalCommandError: If response times out.
+            NarwalConnectionError: If not connected and reconnecting failed.
+            NarwalCommandError: If the response times out twice.
+        """
+        first_error: Exception
+        try:
+            return await self._send_command_once(short_topic, payload, timeout)
+        except NarwalTransportError as err:
+            first_error, frame_sent = err, err.frame_sent
+        except NarwalConnectionError as err:
+            # The pre-flight check failed, so there was no socket to send on.
+            first_error, frame_sent = err, False
+        except NarwalCommandError as err:
+            # The frame went out but the robot stayed silent. It may still have
+            # acted on it, so treat the command as possibly delivered.
+            first_error, frame_sent = err, True
+
+        if frame_sent and short_topic not in IDEMPOTENT_COMMANDS:
+            _LOGGER.debug(
+                "Not retrying '%s' — the robot may already have executed it (%s)",
+                short_topic,
+                first_error,
+            )
+            raise first_error
+
+        _LOGGER.warning(
+            "Command '%s' failed (%s) — reconnecting, waking and retrying once",
+            short_topic,
+            first_error,
+        )
+
+        if not await self._await_connection(COMMAND_RECONNECT_WAIT):
+            raise first_error
+
+        # robot_awake is exactly the flag that just proved untrustworthy, so
+        # force the burst instead of letting wake() short-circuit on it.
+        await self.wake(timeout=COMMAND_RETRY_WAKE_TIMEOUT, force=True)
+
+        return await self._send_command_once(short_topic, payload, timeout)
+
+    async def _await_connection(self, timeout: float) -> bool:
+        """Wait for the listener loop to (re)establish the connection."""
+        if self.connected:
+            return True
+        try:
+            await asyncio.wait_for(self._connected.wait(), timeout=timeout)
+        except TimeoutError:
+            _LOGGER.warning(
+                "Still no connection to the robot after %.0fs", timeout
+            )
+            return False
+        return True
+
+    async def _send_command_once(
+        self,
+        short_topic: str,
+        payload: bytes,
+        timeout: float,
+    ) -> CommandResponse:
+        """Send a command once and wait for the field5 response.
+
+        Uses a lock to prevent concurrent commands from racing on the
+        response queue. Works both with and without start_listening().
         """
         if not self.connected:
             raise NarwalConnectionError("Not connected to vacuum")
@@ -905,7 +1019,13 @@ class NarwalClient:
 
             full_topic = self._full_topic(short_topic)
             frame = build_frame(full_topic, payload)
-            await self._ws.send(frame)
+            try:
+                await self._ws.send(frame)
+            except (websockets.exceptions.WebSocketException, OSError) as err:
+                raise NarwalTransportError(
+                    f"Connection lost while sending '{short_topic}': {err}",
+                    frame_sent=False,
+                ) from err
             _LOGGER.debug("Sent command: %s (%d bytes)", short_topic, len(frame))
 
             # If listener is running, wait on the queue (avoid concurrent recv)
@@ -960,6 +1080,11 @@ class NarwalClient:
                 )
             except TimeoutError:
                 continue
+            except (websockets.exceptions.WebSocketException, OSError) as err:
+                raise NarwalTransportError(
+                    f"Connection lost while waiting for a response: {err}",
+                    frame_sent=True,
+                ) from err
 
             if not isinstance(data, bytes) or len(data) < 4:
                 continue

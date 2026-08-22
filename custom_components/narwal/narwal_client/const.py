@@ -103,6 +103,14 @@ TOPIC_CMD_APP_HEARTBEAT = "status/app_status_heartbeat"  # periodic app heartbea
 TOPIC_CMD_NOTIFY_APP_EVENT = "common/notify_app_event"  # "app opened" event
 TOPIC_CMD_PING = "developer/ping"  # dev ping/pong
 
+# WebSocket transport ping. The library kills the connection when a pong is
+# late, which a robot roaming the house on WiFi misses routinely — on
+# 2026-08-22 that dropped four healthy connections in twenty minutes. The
+# app-level heartbeat (KEEPALIVE_INTERVAL) already detects a dead link, so the
+# transport ping only needs to catch a socket that is gone for good.
+WS_PING_INTERVAL = 30  # seconds
+WS_PING_TIMEOUT = 60  # seconds
+
 # Reconnection parameters
 RECONNECT_INITIAL_DELAY = 1.0  # seconds
 RECONNECT_MAX_DELAY = 300.0  # 5 minutes
@@ -122,8 +130,50 @@ BROADCAST_STALE_TIMEOUT = 15.0  # seconds (~10x the 1.5s broadcast interval)
 # Wake sequence timeout — how long to wait for robot to respond after wake burst
 WAKE_TIMEOUT = 20.0  # seconds
 
+# A broadcast older than this means the robot has effectively stopped talking,
+# even while robot_awake still reads True: that flag is only cleared by the
+# keepalive loop after BROADCAST_STALE_TIMEOUT, so a command sent inside that
+# window would otherwise skip the wake burst entirely.
+AWAKE_BROADCAST_MAX_AGE = 5.0  # seconds
+
 # Command response timeout
 COMMAND_RESPONSE_TIMEOUT = 5.0  # seconds
+
+# How long to wait for the listener loop to re-establish the connection before
+# retrying a command that died with the socket.
+COMMAND_RECONNECT_WAIT = 12.0  # seconds
+
+# Wake timeout used before re-sending a failed command. Shorter than
+# WAKE_TIMEOUT so a service call does not hang for half a minute.
+COMMAND_RETRY_WAKE_TIMEOUT = 10.0  # seconds
+
+# Commands that are safe to re-send when we cannot tell whether the robot
+# already executed them: re-sending is either a no-op, gets rejected, or just
+# repeats a state we already asked for. Every clean-start topic is deliberately
+# absent — a duplicate start could launch a second job. Those are still retried
+# when the frame provably never left the socket.
+IDEMPOTENT_COMMANDS = frozenset(
+    {
+        TOPIC_CMD_PAUSE,
+        TOPIC_CMD_RESUME,
+        TOPIC_CMD_FORCE_END,
+        TOPIC_CMD_CANCEL,
+        TOPIC_CMD_RECALL,
+        TOPIC_CMD_WASH_MOP,
+        TOPIC_CMD_DRY_MOP,
+        TOPIC_CMD_DUST_GATHERING,
+        TOPIC_CMD_SET_FAN_LEVEL,
+        TOPIC_CMD_SET_MOP_HUMIDITY,
+        TOPIC_CMD_YELL,
+        TOPIC_CMD_GET_BASE_STATUS,
+        TOPIC_CMD_GET_DEVICE_INFO,
+        TOPIC_CMD_GET_FEATURE_LIST,
+        TOPIC_CMD_GET_CURRENT_TASK,
+        TOPIC_CMD_GET_MAP,
+        TOPIC_CMD_GET_ALL_MAPS,
+        TOPIC_CMD_PING,
+    }
+)
 
 # display_map dropout detection — if robot is cleaning but no display_map
 # arrives for this long, escalate to a full wake burst to recover the

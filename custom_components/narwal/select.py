@@ -84,8 +84,7 @@ class NarwalMopHumiditySelect(NarwalEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Set the mop humidity."""
         client = self.coordinator.client
-        if not client.robot_awake:
-            await client.wake(timeout=10.0)
+        await client.ensure_awake(timeout=10.0)
         resp = await client.set_mop_humidity(_OPTION_TO_ENUM[option])
         _LOGGER.debug(
             "set_mop_humidity(%s) response code=%s", option, resp.result_code

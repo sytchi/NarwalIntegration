@@ -30,7 +30,7 @@ def _make_vacuum(state: NarwalState | None = None) -> NarwalVacuum:
     coordinator.config_entry.title = "Narwal Test"
     coordinator.clean_mode = "sweep_mop"
     coordinator.client = MagicMock()
-    coordinator.client.robot_awake = True
+    coordinator.client.ensure_awake = AsyncMock(return_value=True)
     coordinator.client.start_zone = AsyncMock(
         return_value=MagicMock(result_code=0, success=True)
     )

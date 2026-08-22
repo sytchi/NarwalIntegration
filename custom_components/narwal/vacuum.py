@@ -234,13 +234,11 @@ class NarwalVacuum(NarwalEntity, StateVacuumEntity):
         """Wake the robot if it is not broadcasting.
 
         Sends a wake burst and waits for broadcasts. If the robot doesn't
-        respond, the command is still attempted — it may work even without
-        a wake confirmation (e.g., shallow sleep).
+        respond, the command is still attempted — it may work even without a
+        wake confirmation (e.g., shallow sleep), and send_command() retries it
+        once behind a forced wake if it turns out it didn't.
         """
-        client = self.coordinator.client
-        if not client.robot_awake:
-            _LOGGER.debug("Robot not awake — sending wake burst")
-            await client.wake(timeout=10.0)
+        await self.coordinator.client.ensure_awake(timeout=10.0)
 
     async def async_start(self) -> None:
         """Start or resume cleaning."""

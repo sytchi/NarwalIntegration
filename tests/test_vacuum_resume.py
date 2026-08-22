@@ -28,7 +28,7 @@ def _make_vacuum(state: NarwalState | None = None) -> NarwalVacuum:
     coordinator.config_entry.data = {"device_id": "test_dev_001"}
     coordinator.config_entry.title = "Narwal Test"
     coordinator.client = MagicMock()
-    coordinator.client.robot_awake = True
+    coordinator.client.ensure_awake = AsyncMock(return_value=True)
     coordinator.client.resume = AsyncMock(
         return_value=MagicMock(result_code=0, success=True)
     )
@@ -78,12 +78,13 @@ class TestAsyncResumeTask:
         vac.coordinator.client.resume.assert_awaited_once()
 
     async def test_wakes_robot_before_resume(self) -> None:
-        """Sends a wake burst first when the robot is not broadcasting."""
+        """Asks the client to wake the robot before sending the command."""
         vac = _make_vacuum(state=None)
-        vac.coordinator.client.robot_awake = False
-        vac.coordinator.client.wake = AsyncMock(return_value=False)
+        vac.coordinator.client.ensure_awake = AsyncMock(return_value=False)
         await vac.async_resume_task()
-        vac.coordinator.client.wake.assert_awaited_once()
+        vac.coordinator.client.ensure_awake.assert_awaited_once()
+        # An unconfirmed wake must not swallow the command: a shallow sleeper
+        # often obeys anyway, and send_command() retries if it does not.
         vac.coordinator.client.resume.assert_awaited_once()
 
     async def test_unsuccessful_resume_does_not_raise(self) -> None:

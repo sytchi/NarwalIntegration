@@ -71,7 +71,7 @@ class TestVacuumUsesCleanMode:
         coordinator = _make_coordinator()
         coordinator.clean_mode = "sweep"
         coordinator.data = None
-        coordinator.client.robot_awake = True
+        coordinator.client.ensure_awake = AsyncMock(return_value=True)
         coordinator.client.start_clean_whole = AsyncMock(
             return_value=MagicMock(result_code=1, success=True)
         )
@@ -91,7 +91,7 @@ class TestVacuumUsesCleanMode:
         coordinator = _make_coordinator()
         coordinator.clean_mode = "mop"
         coordinator.data = None
-        coordinator.client.robot_awake = True
+        coordinator.client.ensure_awake = AsyncMock(return_value=True)
         coordinator.client.start_clean_whole = AsyncMock(
             return_value=MagicMock(
                 result_code=CommandResult.NOT_APPLICABLE, success=False
@@ -108,7 +108,7 @@ class TestVacuumUsesCleanMode:
     async def test_clean_segments_passes_selected_mode(self) -> None:
         coordinator = _make_coordinator()
         coordinator.clean_mode = "mop"
-        coordinator.client.robot_awake = True
+        coordinator.client.ensure_awake = AsyncMock(return_value=True)
         coordinator.client.start_clean_rooms = AsyncMock(
             return_value=MagicMock(result_code=1, success=True)
         )

@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Commands no longer die silently when the connection drops under them. A
+  command that fails is retried once behind a forced wake burst, instead of
+  needing the wake button and a second manual attempt. A clean start is never
+  repeated when the robot may already have received it.
+- The connection is no longer dropped over a single late pong. A robot roaming
+  the house misses those routinely; the app-level heartbeat already detects a
+  link that is really gone.
+- The wake burst before a command now looks at how long the robot has actually
+  been quiet, instead of a flag that stays true for 15 seconds of silence.
+
 ## [2.1.4] - 2026-08-22
 
 > ⚠️ Upgrading from 1.x? See the [2.0.0](#200---2026-07-25) breaking changes.

@@ -45,7 +45,7 @@ def _make_vacuum(state: NarwalState | None = None) -> NarwalVacuum:
     coordinator.config_entry.title = "Narwal Test"
     coordinator.clean_mode = "sweep"
     coordinator.client = MagicMock()
-    coordinator.client.robot_awake = True
+    coordinator.client.ensure_awake = AsyncMock(return_value=True)
     coordinator.last_update_success = True
 
     vac = NarwalVacuum.__new__(NarwalVacuum)
