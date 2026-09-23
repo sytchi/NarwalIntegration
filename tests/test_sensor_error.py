@@ -26,6 +26,20 @@ MOP_DRYING_INTERRUPTED = 34668608
 # Live-captured fault: 0x02020030, 扫地时右边刷异常 (side brush fault while
 # sweeping) — undocumented, absent from the help-center language packs
 SIDE_BRUSH_SWEEPING = 33685552
+# Live-captured fault: 0x02110096, 电机冷却阶段无法开启任务 (cannot start a task
+# while the motor is cooling down) — undocumented, absent from the
+# help-center language packs
+MOTOR_COOLING_DOWN = 34668694
+# Live-captured fault: 0x02310026, 左后驱轮卡住 (rear left drive wheel stuck)
+# — undocumented, absent from the help-center language packs
+REAR_LEFT_WHEEL_STUCK = 36765734
+# Live-captured fault: 0x02310027, 右后驱轮卡住 (rear right drive wheel stuck)
+# — undocumented, absent from the help-center language packs
+REAR_RIGHT_WHEEL_STUCK = 36765735
+# Live-captured fault: 0x02310034, 左后驱轮过流达到阈值需要重启 (rear left drive
+# wheel overcurrent, restart required) — undocumented, absent from the
+# help-center language packs
+REAR_LEFT_WHEEL_OVERCURRENT = 36765748
 
 
 def _make_sensor(error_code: int, message: str = "", severity: int = 2) -> NarwalErrorSensor:
@@ -54,6 +68,15 @@ class TestErrorSlugs:
 
     def test_live_undocumented_side_brush_code(self) -> None:
         assert _make_sensor(SIDE_BRUSH_SWEEPING).native_value == "side_brush_error"
+
+    def test_live_captured_wheel_and_motor_codes(self) -> None:
+        assert _make_sensor(MOTOR_COOLING_DOWN).native_value == "motor_cooling_down"
+        assert _make_sensor(REAR_LEFT_WHEEL_STUCK).native_value == "rear_left_wheel_stuck"
+        assert _make_sensor(REAR_RIGHT_WHEEL_STUCK).native_value == "rear_right_wheel_stuck"
+        assert (
+            _make_sensor(REAR_LEFT_WHEEL_OVERCURRENT).native_value
+            == "rear_left_wheel_overcurrent"
+        )
 
     def test_unknown_code_falls_back_to_translatable_slug(self) -> None:
         """Unknown codes must not leak a bare number into the UI."""

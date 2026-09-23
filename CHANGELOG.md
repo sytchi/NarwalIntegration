@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each time the robot saved a new map. It now runs in an executor from the render
   path and the attribute reads the cached result. The `rooms` key is absent until
   the first map has been processed, instead of an empty dict.
+- Four more fault codes observed live on 2026-09-20 are now named instead of
+  falling back to `unknown_error`: the rear left and rear right drive wheels
+  stuck (`0x02310026`, `0x02310027`), a rear-left drive wheel overcurrent that
+  triggers an automatic return-to-base (`0x02310034`), and a motor
+  cooling-down phase that blocks starting a task (`0x02110096`). All four are
+  translated (English, Polish, French).
 
 ## [2.1.5] - 2026-08-23
 

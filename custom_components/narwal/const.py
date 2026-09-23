@@ -108,9 +108,25 @@ ERROR_CODE_SLUGS: dict[int, str] = {
     0x02110020: "base_connection_failed",  # 1026
     0x02110030: "mop_washing_interrupted",  # 1028
     0x02110040: "mop_drying_interrupted",  # 1039 (live: left dock >5 min)
+    # Live-observed 2026-09-20; no help-center article for this code.
+    # Firmware message 电机冷却阶段无法开启任务 = cannot start a task while the
+    # motor is in its cooldown phase. Severity: Error; does not trigger a
+    # return-to-base.
+    0x02110096: "motor_cooling_down",
     0x02130020: "entered_no_go_zone",  # 1013
     0x02310025: "wheel_malfunction",  # 1014-1016
+    # Live-observed 2026-09-20; no help-center article for this code.
+    # Firmware message 左后驱轮卡住 = rear left drive wheel stuck.
+    0x02310026: "rear_left_wheel_stuck",
+    # Live-observed 2026-09-20; no help-center article for this code.
+    # Firmware message 右后驱轮卡住 = rear right drive wheel stuck.
+    0x02310027: "rear_right_wheel_stuck",
     0x02310031: "robot_lifted",  # 1017 (live: stuck on a doormat)
+    # Live-observed 2026-09-20; no help-center article for this code.
+    # Firmware message 左后驱轮过流达到阈值需要重启 = rear left drive wheel
+    # overcurrent threshold reached, restart required. Severity: Fatal;
+    # triggers an automatic return-to-base.
+    0x02310034: "rear_left_wheel_overcurrent",
     0x02310100: "lidar_speed_error",  # 1047
     0x02310101: "lidar_cover_error",  # 1048
     0x02310110: "imu_error",  # 1065-1066
